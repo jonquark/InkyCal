@@ -27,10 +27,13 @@ extern int timeZone;
 extern char ssid[];
 extern char pass[];
 
-extern char calendarURL[];
-
 #ifndef NETWORK_H
 #define NETWORK_H
+
+#define NETWORK_RC_OK      0
+#define NETWORK_RC_BUFFULL -1
+
+
 
 // All functions defined in Network.cpp
 
@@ -40,7 +43,7 @@ class Network
     // Functions we can access in main file
     void begin();
     void getTime(char *timeStr, long offset = 0);
-    bool getData(char *data);
+    int getData(char *url, size_t maxbufsize, char *databuf);
 
   private:
     // Functions called from within our class

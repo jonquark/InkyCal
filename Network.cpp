@@ -64,11 +64,18 @@ void Network::getTime(char *timeStr, long offSet)
     strcpy(timeStr, asctime(&timeinfo));
 }
 
-// Function to get all war data from web
-bool Network::getData(char *data)
+// Function to get all data from web
+//
+// Currently restarts device on network errors e.g. no WIFI(!)
+//
+// returns NETWORK_RC_OK (0) on sucess
+//         NETWORK_RC_BUFFULL if buffer was too small
+//         Positive integer: HTTP status code
+//
+int Network::getData(char *url, size_t maxbufsize, char *databuf)
 {
     // Variable to store fail
-    bool f = 0;
+    int rc = NETWORK_RC_OK;
 
     // If not connected to wifi reconnect wifi
     if (WiFi.status() != WL_CONNECTED)
@@ -105,7 +112,7 @@ bool Network::getData(char *data)
     http.getStream().flush();
 
     // Begin http by passing url to it
-    http.begin(calendarURL);
+    http.begin(url);
 
     delay(300);
 
@@ -115,20 +122,32 @@ bool Network::getData(char *data)
     if (httpCode == 200)
     {
         long n = 0;
-        while (http.getStream().available())
-            data[n++] = http.getStream().read();
-        data[n++] = 0;
+        while (   http.getStream().available()
+               && rc == NETWORK_RC_OK )
+        {
+          if (n < maxbufsize -1 )
+          {
+            databuf[n++] = http.getStream().read();
+          }
+          else
+          {
+            rc = NETWORK_RC_BUFFULL;
+          }
+        }
+        Serial.println(F("Received bytes of data: "));
+        Serial.println(n);
+        databuf[n++] = 0;
     }
     else
     {
         Serial.println(httpCode);
-        f = 1;
+        rc = httpCode;
     }
 
     // end http
     http.end();
 
-    return !f;
+    return rc;
 }
 
 void Network::setTime()

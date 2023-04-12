@@ -68,6 +68,7 @@ Network network;
 // Variables for time and raw event info
 char date[64];
 char *data;
+#define DATA_BUFFER_SIZE 2000000LL
 
 // Set background of first task to color green
 int currentColor = 2;
@@ -99,7 +100,7 @@ void setup()
 {
     Serial.begin(115200);
 
-    data = (char *)ps_malloc(2000000LL);
+    data = (char *)ps_malloc(DATA_BUFFER_SIZE);
 
     // Initial display settings
     display.begin();
@@ -111,7 +112,8 @@ void setup()
 
     network.begin();
 
-    if (network.getData(data)) // Try getting data
+    if (    network.getData(calendarURL, DATA_BUFFER_SIZE, data)
+         == NETWORK_RC_OK) // Try getting data
     {
         // Drawing all data, functions for that are above
         drawInfo();
@@ -147,8 +149,11 @@ void drawInfo()
     char *start = strstr(data, "X-WR-CALNAME:");
 
     // If not found return
-    if (!start)
+    if (!start) {
+        Serial.println(F("Had bytes of data but found no title"));
+        Serial.println(strlen(data));
         return;
+    }
 
     // Find where it ends
     start += 13;

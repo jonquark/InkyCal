@@ -1,0 +1,5 @@
+# Secrets/passwords etc
+# (Copy secrets.h.example to secrets.h and update that 
+#  rather than storing secrets.h in git)
+######################################
+secrets.h

@@ -15,6 +15,7 @@ Distributed as-is; no warranty is given.
 */
 
 #include "Network.h"
+#include "LogSerial.h"
 
 #include <HTTPClient.h>
 #include <WiFi.h>
@@ -134,13 +135,13 @@ int Network::getData(char *url, size_t maxbufsize, char *databuf)
             rc = NETWORK_RC_BUFFULL;
           }
         }
-        Serial.println(F("Received bytes of data: "));
-        Serial.println(n);
+        LogSerial_Info("Received bytes of data: %d", n);
         databuf[n++] = 0;
+        LogSerial_Verbose("Received data:\n%s", databuf);
     }
     else
     {
-        Serial.println(httpCode);
+        LogSerial_Error("Received HTTP Code %d", httpCode);
         rc = httpCode;
     }
 

@@ -38,6 +38,8 @@
 // Includes
 #include "Network.h"
 #include "secrets.h"
+#include "LogSerial.h"
+
 #include <algorithm>
 #include <ctime>
 

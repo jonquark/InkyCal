@@ -70,7 +70,8 @@ Network network;
 // Variables for time and raw event info
 char date[64];
 char *data;
-#define DATA_BUFFER_SIZE 2000000LL
+//#define DATA_BUFFER_SIZE 2000000LL
+#define DATA_BUFFER_SIZE 100000LL
 
 // Set background of first task to color green
 int currentColor = 2;
@@ -114,9 +115,18 @@ void setup()
 
     network.begin();
 
+    resetEvents();
+
     if (    network.getData(calendarURL, DATA_BUFFER_SIZE, data)
          == NETWORK_RC_OK) // Try getting data
     {
+        LogSerial_Info("About to start parsing");
+        //Get events in form we can draw
+        parseDataForEvents(data);
+        LogSerial_Info("About to start sorting");
+        sortEvents();
+        LogSerial_Info("About to start drawing");
+
         // Drawing all data, functions for that are above
         drawInfo();
         drawGrid();
@@ -139,6 +149,8 @@ void loop()
 // Function for drawing calendar info
 void drawInfo()
 {
+    LogSerial_Verbose1(">>>drawInfo");
+    
     // Setting font and color
     display.setTextColor(0, 7);
     display.setFont(&FreeSans12pt7b);
@@ -213,8 +225,11 @@ void getToFrom(char *dst, char *from, char *to, int *day, int *timeStamp)
     // ANSI C time struct
     struct tm ltm = {0}, ltm2 = {0};
     char temp[128], temp2[128];
+
+    LogSerial_Verbose2(">>> getToFrom (will cpy from addresses %ld and %ld)", from, to);
     strncpy(temp, from, 16);
     temp[16] = 0;
+    LogSerial_Verbose2("Parsing from: %s", temp);
 
     // https://github.com/esp8266/Arduino/issues/5141, quickfix
     memmove(temp + 5, temp + 4, 16);
@@ -236,6 +251,7 @@ void getToFrom(char *dst, char *from, char *to, int *day, int *timeStamp)
 
     strncpy(temp2, to, 16);
     temp2[16] = 0;
+    LogSerial_Verbose2("Parsing to: %s", temp2);
 
     // Same as above
 
@@ -265,6 +281,7 @@ void getToFrom(char *dst, char *from, char *to, int *day, int *timeStamp)
 
     // Getting the time from our function in Network.cpp
     network.getTime(temp);
+
     if (strncmp(day0, asctime(&event), 10) == 0)
         *day = 0;
     else if (strncmp(day1, asctime(&event), 10) == 0)
@@ -273,6 +290,8 @@ void getToFrom(char *dst, char *from, char *to, int *day, int *timeStamp)
         *day = 2;
     else // event not in next 3 days, don't display
         *day = -1;
+  
+    LogSerial_Verbose2("<<< getFromTo Chosen day %d", *day);
 }
 
 // Function to draw event
@@ -509,49 +528,157 @@ int cmp(const void *a, const void *b)
     return (entryA->timeStamp - entryB->timeStamp);
 }
 
-// Main data drawing data
-void drawData()
+void resetEvents(void)
 {
-    long i = 0;
-    long n = strlen(data);
-
     // reset count
     entriesNum = 0;
+}
+
+void parseDataForEvents(char *rawData)
+{
+    long i = 0;
+    long n = strlen(rawData);
+
+    long foundEventsTotal = 0;
+    long foundEventsRelevant = 0;
+    bool eventRelevant = false;
 
     // Search raw data for events
-    while (i < n && strstr(data + i, "BEGIN:VEVENT"))
-    {
+    while (i < n && strstr(rawData + i, "BEGIN:VEVENT"))
+    { 
+        eventRelevant = false;
+
         // Find next event start and end
-        i = strstr(data + i, "BEGIN:VEVENT") - data + 12;
-        char *end = strstr(data + i, "END:VEVENT");
+        i = strstr(rawData + i, "BEGIN:VEVENT") - rawData + 12;
+        LogSerial_Info("Found Event Start at %d", i);
+
+        char *end = strstr(rawData + i, "END:VEVENT");
+
+        if (end)
+        {
+            LogSerial_Verbose1("Found Event End at pos %d (absolute address %d)", end - rawData, end);
+        }
+        else
+        {
+            LogSerial_Warning("Found event without end (position %ld): %s", i, rawData + i);
+            end = rawData + strlen(rawData);
+        }
 
         // Find all relevant event data
-        char *summary = strstr(data + i, "SUMMARY:") + 8;
-        char *location = strstr(data + i, "LOCATION:") + 9;
-        char *timeStart = strstr(data + i, "DTSTART:") + 8;
-        char *timeEnd = strstr(data + i, "DTEND:") + 6;
+        char *summarySearch = strstr(rawData + i, "SUMMARY:");
+        char *locationSearch = strstr(rawData + i, "LOCATION:");
+        char *timeStartSearch = strstr(rawData + i, "DTSTART:");
+        char *timeEndSearch = strstr(rawData + i, "DTEND:");
+        char *dateStartSearch = strstr(rawData + i, "DTSTART;VALUE=DATE:");
+        char *dateEndSearch = strstr(rawData + i, "DTEND;VALUE=DATE:");
+
+        char *summary = NULL;
+        char *location = NULL;
+        char *timeStart = NULL;
+        char *timeEnd = NULL;
+        char *dateStart = NULL;
+        char *dateEnd = NULL;
+
+        if (summarySearch)
+        {
+            summary = summarySearch + strlen("SUMMARY:");
+        }
+        if (locationSearch)
+        {
+            location = locationSearch + strlen("LOCATION:");
+        }
+        if (timeStartSearch)
+        {
+            timeStart = timeStartSearch + strlen("DTSTART:");
+        }
+        if (timeEndSearch)
+        {
+            timeEnd = timeEndSearch + strlen("DTEND:");
+        }
+        if (dateStartSearch)
+        {
+            dateStart = dateStartSearch + strlen("DTSTART;VALUE=DATE:");
+        }
+        if (dateEndSearch)
+        {
+            dateEnd = dateEndSearch + strlen("DTEND;VALUE=DATE:");
+        }
+
+        LogSerial_Verbose2("Finished finding fields for event %d (so far: relevant %d, total %d)",
+                                                 entriesNum, foundEventsRelevant, foundEventsTotal);
 
         if (summary && summary < end)
         {
             strncpy(entries[entriesNum].name, summary, strchr(summary, '\n') - summary);
             entries[entriesNum].name[strchr(summary, '\n') - summary] = 0;
+            LogSerial_Verbose1("Summary: %s", entries[entriesNum].name);
         }
+        else
+        {
+            LogSerial_Unusual("Event with no summary: %.*s", end - rawData - i, rawData + i);
+        }
+
         if (location && location < end)
         {
             strncpy(entries[entriesNum].location, location, strchr(location, '\n') - location);
             entries[entriesNum].location[strchr(location, '\n') - location] = 0;
+            LogSerial_Verbose1("Location: %s", entries[entriesNum].location);
         }
-        if (timeStart && timeStart < end && timeEnd < end)
+        if (timeStart && timeEnd && timeStart < end && timeEnd < end)
         {
             getToFrom(entries[entriesNum].time, timeStart, timeEnd, &entries[entriesNum].day,
                       &entries[entriesNum].timeStamp);
-        }
-        ++entriesNum;
-    }
 
+            LogSerial_Verbose1("Determined day to be: %d", entries[entriesNum].day);
+            
+            if (entries[entriesNum].day >= 0)
+            {
+              eventRelevant = true;
+            }
+        }
+        else
+        {
+            if (dateStart && dateEnd && dateStart < end && dateEnd < end)
+            {   
+                //Assume date in format YYYYMMDD
+                if (strnlen(dateStart, 8) >= 8 && strnlen(dateEnd, 8))
+                {
+                    LogSerial_Error("Event with no date not time info (not yet handled): %.*s to %.*s", 8, dateStart, 8, dateEnd);
+                }
+                else
+                {
+                    LogSerial_Unusual("Event with no valid date info!");
+                    LogSerial_Unusual("Event with no valid date info - event length %ld", end - rawData - i);
+                    LogSerial_Unusual("Event with no valid date info: %.*s", end - rawData - i, rawData + i);
+                }
+            }
+            else
+            {
+                LogSerial_Unusual("Event with no valid time info!");
+                LogSerial_Unusual("Event with no valid time info - event length %ld", end - rawData - i);
+                LogSerial_Unusual("Event with no valid time info: %.*s", end - rawData - i, rawData + i);
+            }
+        }
+
+        if (eventRelevant)
+        {
+          ++entriesNum;
+          ++foundEventsRelevant;
+        }
+        ++foundEventsTotal;
+    }
+    LogSerial_Info("Found %ld relevant events out of %ld",foundEventsRelevant, foundEventsTotal );
+}
+
+void sortEvents(void)
+{
     // Sort entries by time
     qsort(entries, entriesNum, sizeof(entry), cmp);
+}
 
+// Main data drawing data
+void drawData()
+{
     // Events displayed and overflown counters
     int columns[3] = {0};
     bool clogged[3] = {0};

@@ -123,21 +123,57 @@ int Network::getData(char *url, size_t maxbufsize, char *databuf)
     if (httpCode == 200)
     {
         long n = 0;
-        while (   http.getStream().available()
-               && rc == NETWORK_RC_OK )
+
+        LogSerial_Info("http size (according to Content-Length)  is: %d", http.getSize());
+
+        unsigned long timeoutStart = millis();
+        unsigned long now = timeoutStart;
+        unsigned long lastprogressreport = now;
+        
+        while (    (http.connected() || http.getStream().available())
+                && (rc == NETWORK_RC_OK) 
+                && (now - timeoutStart < 10*1000))
         {
-          if (n < maxbufsize -1 )
-          {
-            databuf[n++] = http.getStream().read();
-          }
-          else
-          {
-            rc = NETWORK_RC_BUFFULL;
-          }
+            long charsInBatch = 0;
+
+            while (    http.getStream().available()
+                    && (rc == NETWORK_RC_OK) 
+                    && (charsInBatch < 500) )
+            {
+                charsInBatch++;
+
+                if (n < maxbufsize -1 )
+                {
+                    databuf[n++] = http.getStream().read();
+                }
+                else
+                {
+                    rc = NETWORK_RC_BUFFULL;
+                }
+            }
+
+            now = millis();
+
+            if (charsInBatch > 0)
+            {
+                timeoutStart = now;
+            }
+
+            if (now - lastprogressreport > 2 * 1000)
+            {
+                LogSerial_Info("So far, received bytes of data: %d", n);
+                lastprogressreport = now;
+            }
+
         }
-        LogSerial_Info("Received bytes of data: %d", n);
+        LogSerial_Info("In total, received bytes of data: %d", n);
         databuf[n++] = 0;
-        LogSerial_Verbose("Received data:\n%s", databuf);
+        LogSerial_Verbose3("Received data:\n%s", databuf);
+
+        if ( n > 100)
+        {
+            LogSerial_Verbose3("Last 100 bytes of data:\n%s", databuf + (n-100));
+        }
     }
     else
     {

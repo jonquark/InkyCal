@@ -51,20 +51,6 @@ void Network::begin()
     setTime();
 }
 
-// Gets time from ntp server
-void Network::getTime(char *timeStr, long offSet)
-{
-    // Get seconds since 1.1.1970.
-    time_t nowSecs = time(nullptr) + (long)timeZone * 3600L + offSet;
-
-    // Used to store time
-    struct tm timeinfo;
-    gmtime_r(&nowSecs, &timeinfo);
-
-    // Copies time string into timeStr
-    strcpy(timeStr, asctime(&timeinfo));
-}
-
 // Function to get all data from web
 //
 // Currently restarts device on network errors e.g. no WIFI(!)

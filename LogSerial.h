@@ -4,6 +4,7 @@
 #include "Arduino.h"
 
 #define LOGSERIAL_LEVEL_SILENT         0
+#define LOGSERIAL_LEVEL_FATALERROR    10
 #define LOGSERIAL_LEVEL_ERROR         20
 #define LOGSERIAL_LEVEL_WARNING       30
 #define LOGSERIAL_LEVEL_UNUSUAL       40
@@ -16,7 +17,13 @@
 
 
 //Change this line to choose logging level
-#define LOGSERIAL_LOGGING_LEVEL LOGSERIAL_LEVEL_VERBOSE3
+#define LOGSERIAL_LOGGING_LEVEL LOGSERIAL_LEVEL_INFO
+
+#if LOGSERIAL_LOGGING_LEVEL >= LOGSERIAL_LEVEL_FATALERROR
+#define LogSerial_FatalError(msg, ...) LogSerial_LogImpl(LOGSERIAL_LEVEL_FATALERROR, msg, ##__VA_ARGS__)
+#else
+#define LogSerial_FatalError(msg, ...)
+#endif
 
 #if LOGSERIAL_LOGGING_LEVEL >= LOGSERIAL_LEVEL_ERROR
 #define LogSerial_Error(msg, ...) LogSerial_LogImpl(LOGSERIAL_LEVEL_ERROR, msg, ##__VA_ARGS__)

@@ -42,7 +42,6 @@ class Network
   public:
     // Functions we can access in main file
     void begin();
-    void getTime(char *timeStr, long offset = 0);
     int getData(char *url, size_t maxbufsize, char *databuf);
 
   private:

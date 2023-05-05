@@ -88,7 +88,10 @@ struct entry
 
 // Here we store calendar entries
 int entriesNum = 0;
-entry entries[100];
+#define MAX_ENTRIES 100
+entry entries[MAX_ENTRIES];
+
+#define DAYS_SHOWN 3
 
 // All our functions declared below setup and loop
 void drawInfo();
@@ -207,91 +210,14 @@ void drawGrid()
         display.setFont(&FreeSans9pt7b);
 
         // Display day info using time offset
-        char temp[64];
-        network.getTime(temp, i * 3600L * 24);
-        temp[10] = 0;
+        char temp[16];
+        getDateStringOffset(temp, i * 3600L * 24, false);
 
         // calculate where to put text and print it
         display.setCursor(17 + (int)((float)x1 + (float)i * (float)(x2 - x1) / (float)m) + 15, y1 + header - 9);
         display.println(temp);
-        Serial.println("JON: time - temp:");        
-        Serial.println(temp);
+        LogSerial_Verbose1("Column title: %s", temp); //Of the form 'Tue May  2'
     }
-}
-
-// Format event times, example 13:00 to 14:00
-void getToFrom(char *dst, char *from, char *to, int *day, int *timeStamp)
-{
-    // ANSI C time struct
-    struct tm ltm = {0}, ltm2 = {0};
-    char temp[128], temp2[128];
-
-    LogSerial_Verbose2(">>> getToFrom (will cpy from addresses %ld and %ld)", from, to);
-    strncpy(temp, from, 16);
-    temp[16] = 0;
-    LogSerial_Verbose2("Parsing from: %s", temp);
-
-    // https://github.com/esp8266/Arduino/issues/5141, quickfix
-    memmove(temp + 5, temp + 4, 16);
-    memmove(temp + 8, temp + 7, 16);
-    memmove(temp + 14, temp + 13, 16);
-    memmove(temp + 16, temp + 15, 16);
-    temp[4] = temp[7] = temp[13] = temp[16] = '-';
-
-    // time.h function
-    strptime(temp, "%Y-%m-%dT%H-%M-%SZ", &ltm);
-
-    // create start and end event structs
-    struct tm event, event2;
-    time_t epoch = mktime(&ltm) + (time_t)timeZone * 3600L;
-    gmtime_r(&epoch, &event);
-    strncpy(dst, asctime(&event) + 11, 5);
-
-    dst[5] = '-';
-
-    strncpy(temp2, to, 16);
-    temp2[16] = 0;
-    LogSerial_Verbose2("Parsing to: %s", temp2);
-
-    // Same as above
-
-    // https://github.com/esp8266/Arduino/issues/5141, quickfix
-    memmove(temp2 + 5, temp2 + 4, 16);
-    memmove(temp2 + 8, temp2 + 7, 16);
-    memmove(temp2 + 14, temp2 + 13, 16);
-    memmove(temp2 + 16, temp2 + 15, 16);
-    temp2[4] = temp2[7] = temp2[13] = temp2[16] = '-';
-
-    strptime(temp2, "%Y-%m-%dT%H-%M-%SZ", &ltm2);
-
-    time_t epoch2 = mktime(&ltm2) + (time_t)timeZone * 3600L;
-    gmtime_r(&epoch2, &event2);
-    strncpy(dst + 6, asctime(&event2) + 11, 5);
-
-    dst[11] = 0;
-
-    char day0[64], day1[64], day2[64];
-
-    // Find UNIX timestamps for next days to see where to put event
-    network.getTime(day0, 0);
-    network.getTime(day1, 24 * 3600);
-    network.getTime(day2, 48 * 3600);
-
-    *timeStamp = epoch;
-
-    // Getting the time from our function in Network.cpp
-    network.getTime(temp);
-
-    if (strncmp(day0, asctime(&event), 10) == 0)
-        *day = 0;
-    else if (strncmp(day1, asctime(&event), 10) == 0)
-        *day = 1;
-    else if (strncmp(day2, asctime(&event), 10) == 0)
-        *day = 2;
-    else // event not in next 3 days, don't display
-        *day = -1;
-  
-    LogSerial_Verbose2("<<< getFromTo Chosen day %d", *day);
 }
 
 // Function to draw event
@@ -420,9 +346,7 @@ bool drawEvent(entry *event, int day, int beginY, int maxHeigth, int *heigthNeed
     // Setting text font
     display.setFont(&FreeSans12pt7b);
 
-    // Some temporary variables
     n = 0;
-    line[128];
 
     // Insert line brakes into setTextColor
     lastSpace = -100;
@@ -519,19 +443,239 @@ bool drawEvent(entry *event, int day, int beginY, int maxHeigth, int *heigthNeed
     return display.getCursorY() < maxHeigth - 5;
 }
 
-// Struct event comparison function, by timestamp, used for qsort later on
-int cmp(const void *a, const void *b)
-{
-    entry *entryA = (entry *)a;
-    entry *entryB = (entry *)b;
-
-    return (entryA->timeStamp - entryB->timeStamp);
-}
-
 void resetEvents(void)
 {
     // reset count
     entriesNum = 0;
+}
+
+//Puts a string representation of a date into
+//timestr.
+// input: unixtime: seconds since 1.1.1970
+// input: inclYear - true if year should be included in string
+// output: timestr: same format as ctime()/asctime() but without time and \n e.g.
+//     Wed Jun 30 1993   (with year -15 chars + \0)
+//     Wed Jun 30        (w/o year - 10 chars + \0)
+
+void getDateString(char *timeStr, time_t unixtime, bool inclYear)
+{
+    //Convert time in unixtime (seconds since 1.1.1970) to a tm struct
+    struct tm timeinfo;
+    gmtime_r(&unixtime, &timeinfo);
+
+    char tempTimeAndDateString[26];
+    // Copies time+date string into temporary buffer
+    strcpy(tempTimeAndDateString, asctime(&timeinfo));
+
+    if (inclYear)
+    {
+        //Move the year+\n\0 on top of the time in the string from asctime()
+        memmove(tempTimeAndDateString+11, tempTimeAndDateString+20, 6);
+        tempTimeAndDateString[15] = '\0';        
+    }
+    else
+    {
+        tempTimeAndDateString[10] = '\0';
+    }
+
+    strcpy(timeStr, tempTimeAndDateString);
+}
+
+//Puts a string representation of a date into
+//timestr.
+// input: offset: seconds into the future from now
+// input: inclYear - true if year should be included in string
+// output: timestr: same format as ctime()/asctime() but without time and \n e.g.
+//     Wed Jun 30 1993   (with year -16 chars including \0)
+//     Wed Jun 30        (w/o year - 11 chars including \0)"
+
+void getDateStringOffset(char* timeStr, long offSet, bool inclYear)
+{
+    // Get seconds since 1.1.1970
+    //TODO: Consider timezone handling
+    time_t nowSecs = time(nullptr) + (long)timeZone * 3600L + offSet;
+
+    getDateString(timeStr, nowSecs, inclYear);
+}
+
+// Format event times - converting to timezone offset
+// input: from - start time for event in YYYYMMDDTHHMMSSZ e.g. 19970901T130000Z
+// input: to   - end time for event in YYYYMMDDTHHMMSSZ e.g. 19970901T130000Z
+// output: dst - date string for event e.g. "14:00-16:00"
+// output: day - which calendar day event matches 0 - for first day
+// output: timestamp - event start in epoch time
+// 
+void getToFrom(char *dst, char *from, char *to, int *day, int *timeStamp)
+{
+    struct tm ltm = {0};
+    char temp[128];
+
+    LogSerial_Verbose2(">>> getToFrom (will cpy from addresses %ld and %ld)", from, to);
+
+    //Creating in "temp" (a version of "from" in a form strptime accepts)
+    strncpy(temp, from, 16);
+    temp[16] = 0;
+    LogSerial_Verbose5("Parsing from: %s", temp);
+
+    // https://github.com/esp8266/Arduino/issues/5141, quickfix
+    memmove(temp + 5, temp + 4, 16);
+    memmove(temp + 8, temp + 7, 16);
+    memmove(temp + 14, temp + 13, 16);
+    memmove(temp + 16, temp + 15, 16);
+    temp[4] = temp[7] = temp[13] = temp[16] = '-';
+
+    strptime(temp, "%Y-%m-%dT%H-%M-%SZ", &ltm);
+
+    //TODO: consider suspect timezone handling
+    time_t from_epochtime_local = mktime(&ltm) + (time_t)timeZone * 3600L;
+
+    struct tm from_tm_local;
+    gmtime_r(&from_epochtime_local, &from_tm_local);
+    strncpy(dst, asctime(&from_tm_local) + 11, 5);
+
+    dst[5] = '-';
+
+    //Creating in "temp" (a version of "to" in a form strptime accepts)
+    strncpy(temp, to, 16);
+    temp[16] = 0;
+    LogSerial_Verbose5("Parsing to: %s", temp);
+
+    // https://github.com/esp8266/Arduino/issues/5141, quickfix
+    memmove(temp + 5, temp + 4, 16);
+    memmove(temp + 8, temp + 7, 16);
+    memmove(temp + 14, temp + 13, 16);
+    memmove(temp + 16, temp + 15, 16);
+    temp[4] = temp[7] = temp[13] = temp[16] = '-';
+
+    strptime(temp, "%Y-%m-%dT%H-%M-%SZ", &ltm);
+
+    //Add the end output date string (to dst) in form (e.g. add 14:00 to 13:00-)
+    
+    // TODO: consider suspect timezone handling
+    time_t to_epochtime_local = mktime(&ltm) + (time_t)timeZone * 3600L;
+    
+    struct tm to_tm_local;
+    gmtime_r(&to_epochtime_local, &to_tm_local);
+    strncpy(dst + 6, asctime(&to_tm_local) + 11, 5);
+
+    dst[11] = 0;
+
+    *timeStamp = from_epochtime_local;
+
+    char eventDateString[16];
+    getDateString(eventDateString, from_epochtime_local, true);
+
+    bool matchedDay= false;
+
+    for (int daynum = 0; daynum < DAYS_SHOWN; daynum++)
+    {
+        char dayDateString[16];
+        getDateStringOffset(dayDateString, daynum*24*3600L, true);
+
+        if (strcmp(eventDateString, dayDateString) == 0)
+        {
+            matchedDay = true;
+            *day = daynum;
+        }
+    }
+
+    if (!matchedDay)
+    {
+        *day = -1;    // event not in date range we are showing, don't display  
+    }
+  
+    LogSerial_Verbose2("<<< getFromTo Chosen day %d", *day);
+}
+
+//On entry to this function 
+//events[*pEventIndex] has details like summary, location filled in
+//if it's on a matching day we update pEventIndex to refer to the next (as yet unused) event.
+//If the event is multiple days long, we will duplicate the event and point pEventIndex
+//to after the last used event
+//
+// dateStart and dateEnd are both expected to point to array of 8 chars in the form YYYYMMDD
+//
+// returns: true if event was included in entrylist
+bool parseAllDayEvent(entry *pEvents, int *pEventIndex, int maxEvents, char *dateStart, char *dateEnd)
+{
+    //convert dateStart/dateEnd to ints 
+    //We could compare as strings - but this is easier to reason about and not performance sensitive
+    char temp[9];
+    strncpy(temp, dateStart, 8);
+    temp[8] = '\0';
+    long dateStartInt = strtol(temp, NULL, 10);
+
+    strncpy(temp, dateEnd, 8);
+    temp[8] = '\0';    
+    long dateEndInt   = strtol(dateEnd, NULL, 10);
+
+    if (    dateStartInt < 20000101 || dateStartInt > 22000101 
+         || dateEndInt   < 20000101 || dateEndInt   > 22000101  )
+    {
+        LogSerial_Error("parseAllDayEvent: Event %s has dates out of range: start %ld end %ld",
+                                pEvents[*pEventIndex].name, dateStartInt, dateEndInt);
+        return false;
+    }
+
+    int relevantDays = 0;
+
+    for (int daynum = 0; daynum < DAYS_SHOWN; daynum++)
+    {
+        //Get day in the form YYYYMMDD then convert to int: dayInt
+        //TODO: Consider timezone handling
+        time_t dayunixtime = time(nullptr) + (long)timeZone * 3600L +  daynum * 24 * 3600L;
+        struct tm day_tm;
+        gmtime_r(&dayunixtime, &day_tm);
+        strftime(temp, 8, "%Y%m%d", &day_tm);
+        long dayInt = strtol(temp, NULL, 10);
+
+        if (dayInt <= dateEndInt) //Check it's not in the past
+        {
+            if (dayInt >= dateStartInt) //Check it's not in the future
+            {
+                //We need to show this event in column daynum
+                LogSerial_Verbose3("parseAllDayEvent: Event %s is relevant for day %ld : start %d end %ld",
+                                  pEvents[*pEventIndex].name, daynum, dateStartInt, dateEndInt);
+                relevantDays++;
+               
+                if (*pEventIndex < maxEvents - 1)
+                {
+                    //Copy the partial event we are completing to the next slot (in case we need it for the next day)
+                    //and complete the slot that we copied
+                    memcpy(&pEvents[(*pEventIndex) + 1], &pEvents[*pEventIndex], sizeof(struct entry));
+                    pEvents[(*pEventIndex)].day = daynum;
+                    strcpy(pEvents[(*pEventIndex)].time, "All Day");
+
+                    //Work out timestamp for midnight at start of this day
+                    struct tm midnight_tm = day_tm;
+
+                    midnight_tm.tm_sec = 0;
+                    midnight_tm.tm_min = 0;
+                    midnight_tm.tm_hour = timeZone;
+                    pEvents[(*pEventIndex)].timeStamp = mktime(&midnight_tm);
+
+                    
+                    *pEventIndex = *pEventIndex + 1;
+                }
+                else
+                {
+                    LogSerial_Error("parseAllDayEvent: Event %s (day %d - start %ld end %ld) - No space in entry list!",
+                                    pEvents[*pEventIndex].name, daynum, dateStartInt, dateEndInt);
+                }
+            }          
+        }
+    }
+    if (dateStartInt > 20230401 && dateStartInt < 20230530)
+    {
+        LogSerial_Info("parseAllDayEvent: Event %s (start %ld end %ld) - relevant %d days",
+                                pEvents[*pEventIndex].name, dateStartInt, dateEndInt, relevantDays);
+    }
+    else
+    {
+        LogSerial_Verbose1("parseAllDayEvent: Event %s (start %ld end %ld) - relevant %d days",
+                                pEvents[*pEventIndex].name, dateStartInt, dateEndInt, relevantDays);
+    }
+    return (relevantDays > 0);
 }
 
 void parseDataForEvents(char *rawData)
@@ -550,13 +694,13 @@ void parseDataForEvents(char *rawData)
 
         // Find next event start and end
         i = strstr(rawData + i, "BEGIN:VEVENT") - rawData + 12;
-        LogSerial_Info("Found Event Start at %d", i);
+        LogSerial_Verbose1("Found Event Start at %d", i);
 
         char *end = strstr(rawData + i, "END:VEVENT");
 
         if (end)
         {
-            LogSerial_Verbose1("Found Event End at pos %d (absolute address %d)", end - rawData, end);
+            LogSerial_Verbose2("Found Event End at pos %d (absolute address %d)", end - rawData, end);
         }
         else
         {
@@ -634,6 +778,7 @@ void parseDataForEvents(char *rawData)
             if (entries[entriesNum].day >= 0)
             {
               eventRelevant = true;
+              ++entriesNum;
             }
         }
         else
@@ -641,9 +786,12 @@ void parseDataForEvents(char *rawData)
             if (dateStart && dateEnd && dateStart < end && dateEnd < end)
             {   
                 //Assume date in format YYYYMMDD
-                if (strnlen(dateStart, 8) >= 8 && strnlen(dateEnd, 8))
+                if (strnlen(dateStart, 8) >= 8 && strnlen(dateEnd, 8) >= 8)
                 {
-                    LogSerial_Error("Event with no date not time info (not yet handled): %.*s to %.*s", 8, dateStart, 8, dateEnd);
+                    if(parseAllDayEvent(entries, &entriesNum, MAX_ENTRIES, dateStart, dateEnd))
+                    {
+                      eventRelevant = true;
+                    }
                 }
                 else
                 {
@@ -662,12 +810,20 @@ void parseDataForEvents(char *rawData)
 
         if (eventRelevant)
         {
-          ++entriesNum;
           ++foundEventsRelevant;
         }
         ++foundEventsTotal;
     }
     LogSerial_Info("Found %ld relevant events out of %ld",foundEventsRelevant, foundEventsTotal );
+}
+
+// Struct event comparison function, by timestamp, used for qsort later on
+int cmp(const void *a, const void *b)
+{
+    entry *entryA = (entry *)a;
+    entry *entryB = (entry *)b;
+
+    return (entryA->timeStamp - entryB->timeStamp);
 }
 
 void sortEvents(void)

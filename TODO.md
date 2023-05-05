@@ -1,8 +1,6 @@
-* all day events (see:
-   LogSerial_Error("Event with no date not time info (not yet handled): %.*s to %.*s", 8, dateStart, 8, dateEnd); 
+* all day events not tested
 
-* To map events to columns it compared "if (strncmp(day2, asctime(&event), 10) == 0)" - first 10 chars
-  of asctime output don't include the year
+
 
 * Define a structure that defines a google calendar including url, colour
 
@@ -12,6 +10,11 @@
 
 * Timezone handling (to account for daylight savings time)
   https://randomnerdtutorials.com/esp32-ntp-timezones-daylight-saving/
+
+* Currents reads network socket until no more data arrives for 10secs - but calendar is sent using
+    Transfer-Encoding: chunked  (with one chunk - payload length sent in hex at start of body)
+     "After the headers are sent an http response will send the length of the chunk in hex, the chunk of data itself then a 0CRLF ("\r\n").
+      https://en.wikipedia.org/wiki/Chunked_transfer_encoding"
 
 * Handling of calendars bigger than memory buffer (parsing in chunks)
 

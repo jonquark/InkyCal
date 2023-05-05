@@ -626,15 +626,17 @@ bool parseAllDayEvent(entry *pEvents, int *pEventIndex, int maxEvents, char *dat
         time_t dayunixtime = time(nullptr) + (long)timeZone * 3600L +  daynum * 24 * 3600L;
         struct tm day_tm;
         gmtime_r(&dayunixtime, &day_tm);
-        strftime(temp, 8, "%Y%m%d", &day_tm);
+        strftime(temp, 9, "%Y%m%d", &day_tm);
         long dayInt = strtol(temp, NULL, 10);
 
-        if (dayInt <= dateEndInt) //Check it's not in the past
+        LogSerial_Info("Comparing day %ld to event start %ld and end %ld\n", dayInt, dateStartInt, dateEndInt);        
+
+        if (dayInt < dateEndInt) //Check it's not in the past (dateEnd is first date after event)
         {
             if (dayInt >= dateStartInt) //Check it's not in the future
             {
                 //We need to show this event in column daynum
-                LogSerial_Verbose3("parseAllDayEvent: Event %s is relevant for day %ld : start %d end %ld",
+                LogSerial_Verbose3("parseAllDayEvent: Event %s is relevant for day %ld : start %ld end %ld",
                                   pEvents[*pEventIndex].name, daynum, dateStartInt, dateEndInt);
                 relevantDays++;
                

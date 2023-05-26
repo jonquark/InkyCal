@@ -18,7 +18,6 @@
 
 //Change this line to choose logging level
 #define LOGSERIAL_LOGGING_LEVEL LOGSERIAL_LEVEL_INFO
-
 #if LOGSERIAL_LOGGING_LEVEL >= LOGSERIAL_LEVEL_FATALERROR
 #define LogSerial_FatalError(msg, ...) LogSerial_LogImpl(LOGSERIAL_LEVEL_FATALERROR, msg, ##__VA_ARGS__)
 #else

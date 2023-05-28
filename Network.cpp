@@ -59,10 +59,11 @@ void Network::begin()
 //         NETWORK_RC_BUFFULL if buffer was too small
 //         Positive integer: HTTP status code
 //
-int Network::getData(char *url, size_t maxbufsize, char *databuf)
+int Network::getData(const char *url, size_t maxbufsize, char *databuf)
 {
     // Variable to store fail
     int rc = NETWORK_RC_OK;
+    String urlstr(url);
 
     // If not connected to wifi reconnect wifi
     if (WiFi.status() != WL_CONNECTED)
@@ -99,7 +100,7 @@ int Network::getData(char *url, size_t maxbufsize, char *databuf)
     http.getStream().flush();
 
     // Begin http by passing url to it
-    http.begin(url);
+    http.begin(urlstr);
 
     delay(300);
 

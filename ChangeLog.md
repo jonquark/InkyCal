@@ -4,6 +4,8 @@ but there are lots of changes:
 Features:
 
 * Lots more (configurably) diagnostic logging
+* Can set rules to filter events or e.g. change the colour used
+* Can get events from multiple calendars
 
 
 Fixes:

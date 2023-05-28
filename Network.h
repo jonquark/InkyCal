@@ -42,7 +42,7 @@ class Network
   public:
     // Functions we can access in main file
     void begin();
-    int getData(char *url, size_t maxbufsize, char *databuf);
+    int getData(const char *url, size_t maxbufsize, char *databuf);
 
   private:
     // Functions called from within our class

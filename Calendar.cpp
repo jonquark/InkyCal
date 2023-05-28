@@ -514,14 +514,20 @@ uint32_t parseAllDayEvent(entry_t *pEvents, int *pEventIndex, int maxEvents, cha
 }
 
 
-void parseDataForEvents(Calendar_t *pCal, char *rawData)
+char *parsePartialDataForEvents(char *rawData, void *context)
 {
+    CalendarParsingContext_t *calContext = (CalendarParsingContext_t *)context;  
+    Calendar_t *pCal = calContext->pCal;
+
     long i = 0;
     long n = strlen(rawData);
 
-    long foundEventsTotal = 0;
-    long foundEventsRelevant = 0;
+    uint64_t batchEvents = 0;
+    uint64_t batchEventsRelevant = 0;
+
     bool eventRelevant = false;
+    
+    char *unparseddata = rawData;    
 
     // Search raw data for events
     while (i < n && strstr(rawData + i, "BEGIN:VEVENT"))
@@ -537,11 +543,13 @@ void parseDataForEvents(Calendar_t *pCal, char *rawData)
         if (end)
         {
             LogSerial_Verbose2("Found Event End at pos %d (absolute address %d)", end - rawData, end);
+            unparseddata = end;
         }
         else
         {
-            LogSerial_Warning("Found event without end (position %ld): %s", i, rawData + i);
-            end = rawData + strlen(rawData);
+            LogSerial_Info("Found event without end (position %ld) - won't parse %ld bytes", i, n-i);
+            LogSerial_Verbose1("Unparsed event fragment:\n%s", rawData + i);
+            goto mod_exit;
         }
 
         // Find all relevant event data
@@ -688,10 +696,16 @@ void parseDataForEvents(Calendar_t *pCal, char *rawData)
 
             if (eventRelevant)
             {
-              ++foundEventsRelevant;
+              ++batchEventsRelevant;
             }
-            ++foundEventsTotal;
+            ++batchEvents;
         }
     }
-    LogSerial_Info("Found %ld relevant events out of %ld",foundEventsRelevant, foundEventsTotal );
+mod_exit:
+    calContext->totalEvents += batchEvents;
+    calContext->totalEventsRelevant += batchEventsRelevant;
+
+    LogSerial_Info("In this chunk Found %" PRIu64 " relevant events out of %" PRIu64 " (in total %" PRIu64 " relevant out of %" PRIu64 ")",
+                      batchEventsRelevant, batchEvents,  calContext->totalEventsRelevant , calContext->totalEvents);
+    return unparseddata;
 }

@@ -21,6 +21,9 @@ Distributed as-is; no warranty is given.
 #include <WiFi.h>
 #include <WiFiClientSecure.h>
 
+//Try to parse data only when we have at least this many bytes
+#define INKY_NETWORK_MINIMUM_CHUNK_SIZE 50000
+
 void Network::begin()
 {
     // Initiating wifi, like in BasicHttpClient example
@@ -59,7 +62,7 @@ void Network::begin()
 //         NETWORK_RC_BUFFULL if buffer was too small
 //         Positive integer: HTTP status code
 //
-int Network::getData(const char *url, size_t maxbufsize, char *databuf)
+int Network::getData(const char *url, size_t maxbufsize,  dataParsingFn_t parser, void *parsingContext)
 {
     // Variable to store fail
     int rc = NETWORK_RC_OK;
@@ -92,6 +95,7 @@ int Network::getData(const char *url, size_t maxbufsize, char *databuf)
             }
         }
     }
+    LogSerial_Info("Preparing to make http request to %s... wifi is connected", url);
 
     // Http object used to make get request
     HTTPClient http;
@@ -110,6 +114,11 @@ int Network::getData(const char *url, size_t maxbufsize, char *databuf)
     if (httpCode == 200)
     {
         long n = 0;
+        //ps_malloc allocs special "psram" - separate external memory
+        char *databuf = (char *)ps_malloc(maxbufsize);
+        uint64_t totalReceived = 0;
+        uint64_t totalParsed   = 0;
+
 
         LogSerial_Info("http size (according to Content-Length)  is: %d", http.getSize());
 
@@ -127,11 +136,10 @@ int Network::getData(const char *url, size_t maxbufsize, char *databuf)
                     && (rc == NETWORK_RC_OK) 
                     && (charsInBatch < 500) )
             {
-                charsInBatch++;
-
                 if (n < maxbufsize -1 )
                 {
                     databuf[n++] = http.getStream().read();
+                    charsInBatch++;
                 }
                 else
                 {
@@ -143,17 +151,38 @@ int Network::getData(const char *url, size_t maxbufsize, char *databuf)
 
             if (charsInBatch > 0)
             {
+                totalReceived += charsInBatch;
                 timeoutStart = now;
             }
 
             if (now - lastprogressreport > 2 * 1000)
             {
-                LogSerial_Info("So far, received bytes of data: %d", n);
+                LogSerial_Info("So far, received bytes of data: %d", totalReceived);
                 lastprogressreport = now;
             }
 
+            if (  rc == NETWORK_RC_BUFFULL
+                ||( n > INKY_NETWORK_MINIMUM_CHUNK_SIZE && rc == NETWORK_RC_OK))
+            {   
+                databuf[n] = 0;
+                char *unparseddata = parser(databuf, parsingContext);
+
+                if (unparseddata == NULL)
+                {
+                    LogSerial_FatalError("Failed to parse %s", url);
+                    rc = NETWORK_RC_PARSEFAIL;                  
+                }
+                else if (unparseddata != databuf)
+                {
+                    uint64_t justparsed = (unparseddata - databuf);
+                    totalParsed += justparsed;
+                    n -= justparsed;
+                    memmove(databuf, unparseddata, n);
+                    rc = NETWORK_RC_OK;
+                }
+            }
         }
-        LogSerial_Info("In total, received bytes of data: %d", n);
+        LogSerial_Info("In total, received bytes of data: %d", totalReceived);
         databuf[n++] = 0;
         LogSerial_Verbose3("Received data:\n%s", databuf);
 
@@ -161,6 +190,28 @@ int Network::getData(const char *url, size_t maxbufsize, char *databuf)
         {
             LogSerial_Verbose3("Last 100 bytes of data:\n%s", databuf + (n-100));
         }
+
+        if (n > 1 && rc == NETWORK_RC_OK)
+        {
+            //Parse last data
+            char *unparseddata = parser(databuf, parsingContext);
+
+            if (unparseddata == NULL)
+            {
+                LogSerial_FatalError("Failed to do final parse of %s", url);
+                rc = NETWORK_RC_PARSEFAIL;                  
+            }
+            else if (unparseddata != databuf)
+            { 
+                uint64_t justparsed = (unparseddata - databuf);
+                totalParsed += justparsed;
+                n -= justparsed;
+                memmove(databuf, unparseddata, n);
+                LogSerial_Info("Left over %ld bytes of data after final parse: %s", n, databuf); 
+            }
+        }
+        LogSerial_Info("In total, parsed bytes of data: %d", totalParsed);
+        free(databuf);
     }
     else
     {

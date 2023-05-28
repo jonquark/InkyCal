@@ -134,21 +134,20 @@ bool parseAllCalendars()
     bool allok = true;
     Calendar_t *pCal = &Calendars[0];
 
-    data = (char *)ps_malloc(DATA_BUFFER_SIZE);
-
     while (pCal->url != NULL && allok)
-    {   
-        if (network.getData(pCal->url, DATA_BUFFER_SIZE, data)
-             == NETWORK_RC_OK)
+    { 
+        CalendarParsingContext_t context;
+        context.pCal = pCal;
+        context.totalEventsRelevant = 0;
+        context.totalEvents = 0;
+
+        int networkrc =  network.getData(pCal->url, DATA_BUFFER_SIZE, 
+                              parsePartialDataForEvents, &context);
+
+        if (networkrc != NETWORK_RC_OK)
         {
-            LogSerial_Info("About to start parsing calendar %s", pCal->url);
-        
-            //Get events in form we can draw
-            parseDataForEvents(pCal, data);       
-        }
-        else
-        {
-            //will already have logged the error
+            LogSerial_FatalError("Failed (rc=%d) in network read of %s",
+                  networkrc, pCal->url);
             allok = false;
         }
         pCal++;
@@ -171,7 +170,9 @@ void drawInfo()
 
     // Find email in raw data
     char temp[64];
-    char *start = strstr(data, "X-WR-CALNAME:");
+
+    sprintf(temp, "Title goes here");
+    /*char *start = strstr(data, "X-WR-CALNAME:");
 
     // If not found return
     if (!start) {
@@ -185,7 +186,7 @@ void drawInfo()
     char *end = strchr(start, '\n');
 
     strncpy(temp, start, end - start - 1);
-    temp[end - start - 1] = 0;
+    temp[end - start - 1] = 0;*/
 
     // Print it
     display.println(temp);

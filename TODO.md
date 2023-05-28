@@ -1,5 +1,3 @@
-* Handling of calendars bigger than memory buffer (parsing in chunks)
-
 * Change title drawn in drawInfo() - name of calendar won't work when multiple calendars
   (maybe time of last update + number of events (from each calendar?) + number of errors)
 
@@ -24,3 +22,5 @@
          do we have installProcessList and eventprocesslist? I thinking no... run the same list twice
          (per event and per instance first time doing contains etc then second time does LESS_THAN_AGO)
     (For SET_SORT_TIE_PRIORITY, have cmp() use another extra new field (sortTiePriority) to split ties (all day events)))
+
+* %ld is not right for 64bit types %" PRIu64 ¨ or %" PRId64 ¨

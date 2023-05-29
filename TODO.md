@@ -10,6 +10,8 @@
 
 * sort out licensing
 
+* Rework word wrap (example that works badly: "Spring Bank Holiday" breaks after Spring and before y)
+
 * Add more advanced rule types:
              e.g.`{ LESS_THAN_AGO, "1 week", MOVE_EVENT, DAY2}`
              or  `{ MATCHES_NOCASE_STRIP, "Dad", SET_SORT_TIE_PRIORITY, 10}`
@@ -19,3 +21,5 @@
     (For SET_SORT_TIE_PRIORITY, have cmp() use another extra new field (sortTiePriority) to split ties (all day events)))
 
 * %ld is not right for 64bit types %" PRIu64 ¨ or %" PRId64 ¨
+
+* (Optional?) removal of dups between calendars

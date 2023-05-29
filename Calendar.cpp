@@ -88,7 +88,7 @@ uint32_t  getTimeStringNow(char *buffer, size_t maxlen)
     struct tm now_tm;
     gmtime_r(&nowSecs, &now_tm);
 
-    return strftime(buffer, maxlen, "%Y-%m-%dT%H:%M", &now_tm);
+    return strftime(buffer, maxlen, "%Y-%m-%d %H:%M", &now_tm);
 }
 
 //used in getToFrom

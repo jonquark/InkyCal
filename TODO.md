@@ -10,8 +10,6 @@
 
 * sort out licensing
 
-* Button - wake up example that would cause a refresh
-
 * Add more advanced rule types:
              e.g.`{ LESS_THAN_AGO, "1 week", MOVE_EVENT, DAY2}`
              or  `{ MATCHES_NOCASE_STRIP, "Dad", SET_SORT_TIE_PRIORITY, 10}`

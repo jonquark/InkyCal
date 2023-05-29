@@ -60,8 +60,8 @@ int timeZone = TIMEZONE_OFFSET_GMT;
 
 //---------------------------
 
-// Delay between API calls
-#define DELAY_MS 15 * 60 * 1000
+// Delay (milliseconds) between calendar updates
+#define DELAY_MS 60 * 60 * 1000
 
 // Initiate out Inkplate object
 Inkplate display;
@@ -126,6 +126,12 @@ void setup()
         // Actually display all data
         display.display();
     }
+
+    // Enable wakeup from deep sleep on gpio 36 (wake button)
+    esp_sleep_enable_ext0_wakeup(GPIO_NUM_36, 0);
+
+    // Put the panel in the deep sleep
+    display.setPanelDeepSleep(0);
 
     // Go to sleep before checking again
     esp_sleep_enable_timer_wakeup(1000L * DELAY_MS);
@@ -208,8 +214,27 @@ void drawInfo()
       snprintf (statsstr,24, "W: %" PRIu64 " E: %" PRIu64 "!", loggedWarnings, loggedErrors+loggedFatals);
     }
 
+    bool buttonPressed = false;
+
+    esp_sleep_wakeup_cause_t wakeup_reason;
+
+    //This always seems to give reason 0 - no big deal - but something to investigate?
+    wakeup_reason = esp_sleep_get_wakeup_cause();
+
+    if (wakeup_reason == ESP_SLEEP_WAKEUP_EXT0)
+    {
+        LogSerial_Info("Wake up = button");
+        buttonPressed = true;
+    }
+    else
+    {
+        LogSerial_Info("Wake up reason: %u", wakeup_reason);      
+    }
+
     char title[48];
-    snprintf(title, 48, "Upd: %s (%s)", timestr, statsstr);
+    snprintf(title, 48, "%s: %s (%s)",
+          (buttonPressed ? "But": "Upd"),
+          timestr, statsstr);
     // Print it
     display.println(title);
 }

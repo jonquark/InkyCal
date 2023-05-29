@@ -61,7 +61,7 @@ int timeZone = TIMEZONE_OFFSET_GMT;
 //---------------------------
 
 // Delay (milliseconds) between calendar updates
-#define DELAY_MS 60 * 60 * 1000
+#define DELAY_MS UINT64_C(60 * 60 * 1000)
 
 // Initiate out Inkplate object
 Inkplate display;
@@ -134,7 +134,7 @@ void setup()
     display.setPanelDeepSleep(0);
 
     // Go to sleep before checking again
-    esp_sleep_enable_timer_wakeup(1000L * DELAY_MS);
+    esp_sleep_enable_timer_wakeup(UINT64_C(1000) * DELAY_MS);
     esp_deep_sleep_start();
 }
 

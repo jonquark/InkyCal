@@ -1,4 +1,5 @@
 #include "entry.h"
+#include "InkyCalInternal.h"
 
 // Here we store calendar entries
 int entriesNum = 0;

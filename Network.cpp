@@ -14,6 +14,7 @@ If you have any questions about licensing, please contact techsupport@e-radionic
 Distributed as-is; no warranty is given.
 */
 
+#include "InkyCalInternal.h"
 #include "Network.h"
 #include "LogSerial.h"
 
@@ -170,6 +171,7 @@ int Network::getData(const char *url, size_t maxbufsize,  dataParsingFn_t parser
                 if (unparseddata == NULL)
                 {
                     LogSerial_FatalError("Failed to parse %s", url);
+                    logProblem(INKY_SEVERITY_FATAL);
                     rc = NETWORK_RC_PARSEFAIL;                  
                 }
                 else if (unparseddata != databuf)
@@ -199,6 +201,7 @@ int Network::getData(const char *url, size_t maxbufsize,  dataParsingFn_t parser
             if (unparseddata == NULL)
             {
                 LogSerial_FatalError("Failed to do final parse of %s", url);
+                logProblem(INKY_SEVERITY_FATAL);
                 rc = NETWORK_RC_PARSEFAIL;                  
             }
             else if (unparseddata != databuf)
@@ -216,6 +219,7 @@ int Network::getData(const char *url, size_t maxbufsize,  dataParsingFn_t parser
     else
     {
         LogSerial_Error("Received HTTP Code %d", httpCode);
+        logProblem(INKY_SEVERITY_ERROR);
         rc = httpCode;
     }
 

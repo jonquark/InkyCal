@@ -1,3 +1,4 @@
+#include "InkyCalInternal.h"
 #include "EventProcessing.h"
 #include "entry.h"
 #include "LogSerial.h"
@@ -98,6 +99,7 @@ uint32_t runEventMatchRules(const ProcessingRule_t *pEventRules, entry_t *entryp
 
           default:
               LogSerial_Error("Unknown Event Rule type %u", pEventRules->MatchType);
+              logProblem(INKY_SEVERITY_ERROR);              
         }
 
         if (ruleMatches)

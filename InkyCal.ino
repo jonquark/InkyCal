@@ -36,6 +36,7 @@
 #include "Fonts/FreeSans9pt7b.h"
 
 // Includes
+#include "InkyCalInternal.h"
 #include "Network.h"
 #include "entry.h"
 #include "Calendar.h"
@@ -77,6 +78,13 @@ char *data;
 //If we are asked for random colours for entries we cycle through 
 //the colours (skipping black and white)
 int8_t currentColor = INKY_EVENT_COLOUR_GREEN;
+
+//These are increased with logProblem (and use by drawInfo())
+uint64_t loggedWarnings = 0;
+uint64_t loggedErrors   = 0;
+uint64_t loggedFatals   = 0;
+
+uint32_t numCalendars = 0;
 
 
 // All our functions declared below setup and loop
@@ -138,8 +146,10 @@ bool parseAllCalendars()
     { 
         CalendarParsingContext_t context;
         context.pCal = pCal;
-        context.totalEventsRelevant = 0;
-        context.totalEvents = 0;
+        context.calRelevantEvents = 0;
+        context.calEvents = 0;
+
+        numCalendars++;        
 
         int networkrc =  network.getData(pCal->url, DATA_BUFFER_SIZE, 
                               parsePartialDataForEvents, &context);
@@ -148,6 +158,7 @@ bool parseAllCalendars()
         {
             LogSerial_FatalError("Failed (rc=%d) in network read of %s",
                   networkrc, pCal->url);
+            logProblem(INKY_SEVERITY_FATAL);
             allok = false;
         }
         pCal++;
@@ -162,34 +173,45 @@ void drawInfo()
     LogSerial_Verbose1(">>>drawInfo");
     
     // Setting font and color
-    display.setTextColor(0, 7);
+    if (loggedWarnings == loggedErrors == loggedFatals == 0)
+    {
+        display.setTextColor(INKY_EVENT_COLOUR_BLACK, 7);
+    }
+    else
+    {
+        display.setTextColor(INKY_EVENT_COLOUR_RED, 7);      
+    }
     display.setFont(&FreeSans12pt7b);
     display.setTextSize(1);
 
     display.setCursor(20, 20);
 
-    // Find email in raw data
-    char temp[64];
+    char timestr[24];
+    uint32_t charsUsed = getTimeStringNow(timestr, 22);
 
-    sprintf(temp, "Title goes here");
-    /*char *start = strstr(data, "X-WR-CALNAME:");
-
-    // If not found return
-    if (!start) {
-        Serial.println(F("Had bytes of data but found no title"));
-        Serial.println(strlen(data));
-        return;
+    if (charsUsed == 0)
+    {
+        LogSerial_Error("Failed to get time string");
+        logProblem(INKY_SEVERITY_ERROR);
     }
 
-    // Find where it ends
-    start += 13;
-    char *end = strchr(start, '\n');
+    char statsstr[24];
 
-    strncpy(temp, start, end - start - 1);
-    temp[end - start - 1] = 0;*/
+    if (loggedWarnings == loggedErrors == loggedFatals == 0)
+    {
 
+      snprintf (statsstr,24, "c: %" PRIu32 " e: %" PRIu64 "/%" PRIu64 "", 
+                numCalendars, getRelevantEventCount(), getTotalEventCount());
+    }
+    else
+    {
+      snprintf (statsstr,24, "W: %" PRIu64 " E: %" PRIu64 "!", loggedWarnings, loggedErrors+loggedFatals);
+    }
+
+    char title[48];
+    snprintf(title, 48, "Upd: %s (%s)", timestr, statsstr);
     // Print it
-    display.println(temp);
+    display.println(title);
 }
 
 // Draw lines in which to put events
@@ -510,5 +532,26 @@ void drawData()
             display.print(cloggedCount[i]);
             display.print(" more events");
         }
+    }
+}
+
+void logProblem(uint32_t severity)
+{
+    if (severity == INKY_SEVERITY_WARNING)
+    {
+        loggedWarnings++;
+    }
+    else if (severity == INKY_SEVERITY_ERROR)
+    {
+        loggedErrors++;
+    }
+    else if (severity == INKY_SEVERITY_FATAL)
+    {
+        loggedFatals++;
+    }
+    else
+    {
+        LogSerial_Error("logProblem called with unknown severity % " PRIu32 ".", severity);
+        loggedErrors++;
     }
 }

@@ -1,6 +1,3 @@
-* Change title drawn in drawInfo() - name of calendar won't work when multiple calendars
-  (maybe time of last update + number of events (from each calendar?) + number of errors)
-
 * Add eventdesc (multi-line so hard to determine end to eventprocessing)
 
 * Timezone handling (to account for daylight savings time)

@@ -1,6 +1,7 @@
 #include "Calendar.h"
 #include <string.h>
 
+#include "InkyCalInternal.h"
 #include "LogSerial.h"
 #include "EventProcessing.h"
 
@@ -26,6 +27,9 @@ typedef struct recurringEventInfo
 
 #define INKY_RECUR_TYPE_WEEKLY  1
 
+
+uint64_t allEvents = 0;
+uint64_t allRelevantEvents = 0;
 
 //Puts a string representation of a date into
 //timestr.
@@ -74,6 +78,17 @@ void getDateStringOffset(char* timeStr, long offSet, bool inclYear)
     time_t nowSecs = time(nullptr) + (long)timeZone * 3600L + offSet;
 
     getDateString(timeStr, nowSecs, inclYear);
+}
+
+//returns 0 on error or number of types (not including \0 added to buffer)
+uint32_t  getTimeStringNow(char *buffer, size_t maxlen)
+{
+    //TODO: Consider timezone handling
+    time_t nowSecs = time(nullptr) + (long)timeZone * 3600L;
+    struct tm now_tm;
+    gmtime_r(&nowSecs, &now_tm);
+
+    return strftime(buffer, maxlen, "%Y-%m-%dT%H:%M", &now_tm);
 }
 
 //used in getToFrom
@@ -160,6 +175,7 @@ bool initialiseRecurringAllDayEvent(recurringEventInfo_t *toinit,
     else
     {
         LogSerial_FatalError("Currently can only parse weekly recurring event but got recur rule: %s",  recurrenceRule);
+        logProblem(INKY_SEVERITY_FATAL);        
         return false; 
     }
 
@@ -179,6 +195,7 @@ bool initialiseRecurringAllDayEvent(recurringEventInfo_t *toinit,
         if (countStrLen > 15)
         {
             LogSerial_FatalError("Parse recurring event failed - COUNT= value too large. recur rule: %s",  recurrenceRule);
+            logProblem(INKY_SEVERITY_FATAL);
             return false; 
         }
         char countTemp[16];
@@ -190,6 +207,7 @@ bool initialiseRecurringAllDayEvent(recurringEventInfo_t *toinit,
         if(countLong <= 0 || countLong > 1000000L)
         {
             LogSerial_FatalError("Parse recurring event failed - COUNT= value %ld out of range . recur rule: %s",  countLong, recurrenceRule);
+            logProblem(INKY_SEVERITY_FATAL);            
             return false; 
         }
         toinit->instancesRemaining = countLong;        
@@ -215,6 +233,7 @@ bool initialiseRecurringAllDayEvent(recurringEventInfo_t *toinit,
         if (untilStrLen > 15)
         {
             LogSerial_FatalError("Parse recurring event failed - UNTIL= value too long. recur rule: %s",  recurrenceRule);
+            logProblem(INKY_SEVERITY_FATAL);
             return false; 
         }
         char untilTemp[16];
@@ -226,6 +245,7 @@ bool initialiseRecurringAllDayEvent(recurringEventInfo_t *toinit,
         if(untilEpoch <= 0)
         {
             LogSerial_FatalError("Parse recurring event failed - UNTIL= value %ld out of range . recur rule: %s",  untilEpoch, recurrenceRule);
+            logProblem(INKY_SEVERITY_FATAL);
             return false; 
         }
         toinit->repeatUntil = untilEpoch;
@@ -234,6 +254,7 @@ bool initialiseRecurringAllDayEvent(recurringEventInfo_t *toinit,
     if(toinit->repeatUntil == 0 && toinit->instancesRemaining <= 0 )
     {
         LogSerial_FatalError("Currently can only parse recurring event with a fixed COUNT=  or UNTIL= but got recur rule: %s",  recurrenceRule);
+        logProblem(INKY_SEVERITY_FATAL);
         return false; 
     }
     
@@ -253,6 +274,7 @@ bool initialiseRecurringAllDayEvent(recurringEventInfo_t *toinit,
         if (intervalStrLen > 15)
         {
             LogSerial_FatalError("Parse recurring event failed - INTERVAL= value too large. recur rule: %s",  recurrenceRule);
+            logProblem(INKY_SEVERITY_FATAL);
             return false; 
         }
         char intervalTemp[16];
@@ -264,6 +286,7 @@ bool initialiseRecurringAllDayEvent(recurringEventInfo_t *toinit,
         if(intervalLong <= 0 || intervalLong > 1000000L)
         {
             LogSerial_FatalError("Parse recurring event failed - INTERVAL= value %ld out of range . recur rule: %s",  intervalLong, recurrenceRule);
+            logProblem(INKY_SEVERITY_FATAL);
             return false; 
         }
         toinit->recurrenceInterval = intervalLong;
@@ -271,6 +294,7 @@ bool initialiseRecurringAllDayEvent(recurringEventInfo_t *toinit,
     else
     {
         LogSerial_Error("Currently expect recur rules to contain INTERVAL= but got recur rule: %s (defaulting to 1)",  recurrenceRule);
+        logProblem(INKY_SEVERITY_ERROR);
         toinit->recurrenceInterval = 1;
     }
 
@@ -396,6 +420,7 @@ uint32_t parseAllDayEventInstance(entry_t *pEvents, int *pEventIndex, int maxEve
     {
         LogSerial_Error("parseAllDayEvent: Event %s has dates out of range: start %ld end %ld",
                                 pEvents[*pEventIndex].name, dateStartInt, dateEndInt);
+        logProblem(INKY_SEVERITY_ERROR);
         return 0;
     }
 
@@ -444,6 +469,7 @@ uint32_t parseAllDayEventInstance(entry_t *pEvents, int *pEventIndex, int maxEve
                 {
                     LogSerial_Error("parseAllDayEventInstance: Event %s (day %d - start %ld end %ld) - No space in entry list!",
                                     pEvents[*pEventIndex].name, daynum, dateStartInt, dateEndInt);
+                    logProblem(INKY_SEVERITY_ERROR);
                 }
             }          
         }
@@ -478,6 +504,7 @@ uint32_t parseAllDayEvent(entry_t *pEvents, int *pEventIndex, int maxEvents, cha
                                            dateEnd))
         {
             LogSerial_Error("Failed to parse event with recur rule: %s", recurRule);
+            logProblem(INKY_SEVERITY_ERROR);
             return 0;
         }
 
@@ -599,7 +626,7 @@ char *parsePartialDataForEvents(char *rawData, void *context)
         }
 
         LogSerial_Verbose2("Finished finding fields for event %d (so far: relevant %d, total %d)",
-                                                 entriesNum, foundEventsRelevant, foundEventsTotal);
+                                                 entriesNum, allRelevantEvents, allEvents);
 
         entry_SetColour(&entries[entriesNum], pCal->eventColour);
 
@@ -666,6 +693,7 @@ char *parsePartialDataForEvents(char *rawData, void *context)
                             else
                             {
                                 LogSerial_Error("Recur Rule - too long: %u", rulelen);
+                                logProblem(INKY_SEVERITY_ERROR);
                                 recurRule = NULL;
                             }
                         }
@@ -702,10 +730,25 @@ char *parsePartialDataForEvents(char *rawData, void *context)
         }
     }
 mod_exit:
-    calContext->totalEvents += batchEvents;
-    calContext->totalEventsRelevant += batchEventsRelevant;
+    calContext->calEvents += batchEvents;
+    calContext->calRelevantEvents += batchEventsRelevant;
 
-    LogSerial_Info("In this chunk Found %" PRIu64 " relevant events out of %" PRIu64 " (in total %" PRIu64 " relevant out of %" PRIu64 ")",
-                      batchEventsRelevant, batchEvents,  calContext->totalEventsRelevant , calContext->totalEvents);
+    allEvents += batchEvents;
+    allRelevantEvents += batchEventsRelevant;
+
+    LogSerial_Info("In this chunk Found %" PRIu64 " relevant events out of %" PRIu64 " (for cal: %" PRIu64 " relevant out of %" PRIu64 ")",
+                      batchEventsRelevant, batchEvents,  calContext->calRelevantEvents , calContext->calEvents);
     return unparseddata;
+}
+
+//count of events relevant to calendar display
+uint64_t getRelevantEventCount()
+{
+    return allRelevantEvents;
+}
+
+//count of all events parsed
+uint64_t getTotalEventCount()
+{
+    return allEvents;
 }

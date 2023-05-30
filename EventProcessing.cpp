@@ -1,3 +1,10 @@
+/*
+   This program is free software: you can redistribute it and/or modify it under 
+   the terms of the GNU General Public License as published by the Free Software 
+   Foundation, either version 3 of the License, or (at your option) any later 
+   version.
+*/
+
 #include "InkyCalInternal.h"
 #include "EventProcessing.h"
 #include "entry.h"
@@ -98,7 +105,7 @@ uint32_t runEventMatchRules(const ProcessingRule_t *pEventRules, entry_t *entryp
               break;
 
           default:
-              LogSerial_Error("Unknown Event Rule type %u", pEventRules->MatchType);
+              LogSerial_Error("Unknown Event Rule type %" PRIu32, pEventRules->MatchType);
               logProblem(INKY_SEVERITY_ERROR);              
         }
 

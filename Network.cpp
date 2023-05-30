@@ -1,17 +1,8 @@
 /*
-Network.cpp
-Inkplate 6COLOR Arduino library
-David Zovko, Borna Biro, Denis Vajak, Zvonimir Haramustek @ Soldered
-September 24, 2020
-https://github.com/e-radionicacom/Inkplate-6-Arduino-library
-
-For support, please reach over forums: forum.e-radionica.com/en
-For more info about the product, please check: www.inkplate.io
-
-This code is released under the GNU Lesser General Public License v3.0: https://www.gnu.org/licenses/lgpl-3.0.en.html
-Please review the LICENSE file included with this example.
-If you have any questions about licensing, please contact techsupport@e-radionica.com
-Distributed as-is; no warranty is given.
+   This program is free software: you can redistribute it and/or modify it under 
+   the terms of the GNU General Public License as published by the Free Software 
+   Foundation, either version 3 of the License, or (at your option) any later 
+   version.
 */
 
 #include "InkyCalInternal.h"
@@ -114,7 +105,7 @@ int Network::getData(const char *url, size_t maxbufsize,  dataParsingFn_t parser
 
     if (httpCode == 200)
     {
-        long n = 0;
+        uint64_t n = 0;
         //ps_malloc allocs special "psram" - separate external memory
         char *databuf = (char *)ps_malloc(maxbufsize);
         uint64_t totalReceived = 0;
@@ -158,7 +149,7 @@ int Network::getData(const char *url, size_t maxbufsize,  dataParsingFn_t parser
 
             if (now - lastprogressreport > 2 * 1000)
             {
-                LogSerial_Info("So far, received bytes of data: %d", totalReceived);
+                LogSerial_Info("So far, received bytes of data: %" PRIu64, totalReceived);
                 lastprogressreport = now;
             }
 
@@ -184,7 +175,7 @@ int Network::getData(const char *url, size_t maxbufsize,  dataParsingFn_t parser
                 }
             }
         }
-        LogSerial_Info("In total, received bytes of data: %d", totalReceived);
+        LogSerial_Info("In total, received bytes of data: %" PRIu64, totalReceived);
         databuf[n++] = 0;
         LogSerial_Verbose3("Received data:\n%s", databuf);
 
@@ -210,10 +201,10 @@ int Network::getData(const char *url, size_t maxbufsize,  dataParsingFn_t parser
                 totalParsed += justparsed;
                 n -= justparsed;
                 memmove(databuf, unparseddata, n);
-                LogSerial_Info("Left over %ld bytes of data after final parse: %s", n, databuf); 
+                LogSerial_Info("Left over %" PRIu64 " bytes of data after final parse: %s", n, databuf); 
             }
         }
-        LogSerial_Info("In total, parsed bytes of data: %d", totalParsed);
+        LogSerial_Info("In total, parsed bytes of data: %" PRIu64, totalParsed);
         free(databuf);
     }
     else

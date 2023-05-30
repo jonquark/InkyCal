@@ -1,5 +1,10 @@
 /*
-   Shows selected events from multiple calendars
+   This program is free software: you can redistribute it and/or modify it under 
+   the terms of the GNU General Public License as published by the Free Software 
+   Foundation, either version 3 of the License, or (at your option) any later 
+   version.
+   
+   It shows selected events from multiple calendars
    Based on the Inkplate6COLOR_Google_Calendar example for Soldered Inkplate 6COLOR
    
    
@@ -113,7 +118,6 @@ void setup()
 
     if ( parseAllCalendars() ) // Try getting data
     {
-;
         LogSerial_Info("About to start sorting");
         SortEntries();
         LogSerial_Info("About to start drawing");
@@ -129,9 +133,6 @@ void setup()
 
     // Enable wakeup from deep sleep on gpio 36 (wake button)
     esp_sleep_enable_ext0_wakeup(GPIO_NUM_36, 0);
-
-    // Put the panel in the deep sleep
-    display.setPanelDeepSleep(0);
 
     // Go to sleep before checking again
     esp_sleep_enable_timer_wakeup(UINT64_C(1000) * DELAY_MS);

@@ -1,3 +1,10 @@
+/*
+   This program is free software: you can redistribute it and/or modify it under 
+   the terms of the GNU General Public License as published by the Free Software 
+   Foundation, either version 3 of the License, or (at your option) any later 
+   version.
+*/
+
 #ifndef EVENTPROCESSING_H
 #define EVENTPROCESSING_H
 
@@ -5,9 +12,9 @@
 #include "entry.h"
 
 typedef struct ProcessingRule_t {
-     uint64_t MatchType;
+     uint32_t MatchType;
      const char *MatchString; 
-     uint64_t Result; 
+     uint32_t Result; 
      uint64_t ResultArg;
 } ProcessingRule_t;
 

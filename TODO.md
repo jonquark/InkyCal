@@ -8,8 +8,6 @@
      "After the headers are sent an http response will send the length of the chunk in hex, the chunk of data itself then a 0CRLF ("\r\n").
       https://en.wikipedia.org/wiki/Chunked_transfer_encoding"
 
-* sort out licensing
-
 * Rework word wrap (example that works badly: "Spring Bank Holiday" breaks after Spring and before y)
 
 * Add more advanced rule types:
@@ -20,6 +18,7 @@
          (per event and per instance first time doing contains etc then second time does LESS_THAN_AGO)
     (For SET_SORT_TIE_PRIORITY, have cmp() use another extra new field (sortTiePriority) to split ties (all day events)))
 
-* %ld is not right for 64bit types %" PRIu64 ¨ or %" PRId64 ¨
-
 * (Optional?) removal of dups between calendars
+
+* Currently works with Inkplate Library 7.0.0 (easy to change version in "Library Manager" - investigate crashes with 8.0.0)
+

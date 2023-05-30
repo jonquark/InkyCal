@@ -1,3 +1,10 @@
+/*
+   This program is free software: you can redistribute it and/or modify it under 
+   the terms of the GNU General Public License as published by the Free Software 
+   Foundation, either version 3 of the License, or (at your option) any later 
+   version.
+*/
+
 #include "Calendar.h"
 #include <string.h>
 
@@ -244,7 +251,7 @@ bool initialiseRecurringAllDayEvent(recurringEventInfo_t *toinit,
 
         if(untilEpoch <= 0)
         {
-            LogSerial_FatalError("Parse recurring event failed - UNTIL= value %ld out of range . recur rule: %s",  untilEpoch, recurrenceRule);
+            LogSerial_FatalError("Parse recurring event failed - UNTIL= value %" PRIu64 " out of range . recur rule: %s",  untilEpoch, recurrenceRule);
             logProblem(INKY_SEVERITY_FATAL);
             return false; 
         }
@@ -401,7 +408,7 @@ void getToFrom(char *dst, char *from, char *to, int8_t *day, time_t *timeStamp)
         *day = -1;    // event not in date range we are showing, don't display  
     }
   
-    LogSerial_Verbose2("<<< getFromTo Chosen day %d", *day);
+    LogSerial_Verbose2("<<< getFromTo Chosen day %" PRId8, *day);
 }
 
 //On entry to this function 
@@ -418,7 +425,7 @@ uint32_t parseAllDayEventInstance(entry_t *pEvents, int *pEventIndex, int maxEve
     if (    dateStartInt < 20000101 || dateStartInt > 22000101 
          || dateEndInt   < 20000101 || dateEndInt   > 22000101  )
     {
-        LogSerial_Error("parseAllDayEvent: Event %s has dates out of range: start %ld end %ld",
+        LogSerial_Error("parseAllDayEvent: Event %s has dates out of range: start %d end %d",
                                 pEvents[*pEventIndex].name, dateStartInt, dateEndInt);
         logProblem(INKY_SEVERITY_ERROR);
         return 0;
@@ -433,14 +440,14 @@ uint32_t parseAllDayEventInstance(entry_t *pEvents, int *pEventIndex, int maxEve
         time_t dayunixtime = time(nullptr) + (long)timeZone * 3600L +  daynum * 24 * 3600L;
         int dayInt = convertEpochTimeToYYYYMMDD(dayunixtime);
       
-        LogSerial_Verbose2("Comparing day %d to event start %ld and end %ld\n", dayInt, dateStartInt, dateEndInt);        
+        LogSerial_Verbose2("Comparing day %d to event start %d and end %d\n", dayInt, dateStartInt, dateEndInt);        
 
         if (dayInt < dateEndInt) //Check it's not in the past (dateEnd is first date after event)
         {
             if (dayInt >= dateStartInt) //Check it's not in the future
             {
                 //We need to show this event in column daynum
-                LogSerial_Verbose3("parseAllDayEventInstance: Event %s is relevant for day %ld : start %ld end %ld",
+                LogSerial_Verbose3("parseAllDayEventInstance: Event %s is relevant for day %d : start %d end %d",
                                   pEvents[*pEventIndex].name, daynum, dateStartInt, dateEndInt);
                 relevantDays++;
                
@@ -467,7 +474,7 @@ uint32_t parseAllDayEventInstance(entry_t *pEvents, int *pEventIndex, int maxEve
                 }
                 else
                 {
-                    LogSerial_Error("parseAllDayEventInstance: Event %s (day %d - start %ld end %ld) - No space in entry list!",
+                    LogSerial_Error("parseAllDayEventInstance: Event %s (day %d - start %d end %d) - No space in entry list!",
                                     pEvents[*pEventIndex].name, daynum, dateStartInt, dateEndInt);
                     logProblem(INKY_SEVERITY_ERROR);
                 }
@@ -477,12 +484,12 @@ uint32_t parseAllDayEventInstance(entry_t *pEvents, int *pEventIndex, int maxEve
 
     if (relevantDays > 0)
     {
-        LogSerial_Info("parseAllDayEventInstance: Event %s (start %ld end %ld) - relevant %d days",
+        LogSerial_Info("parseAllDayEventInstance: Event %s (start %d end %d) - relevant %d days",
                                 pEvents[*pEventIndex].name, dateStartInt, dateEndInt, relevantDays);
     }
     else
     {
-        LogSerial_Verbose2("parseAllDayEventInstance: Event %s (start %ld end %ld) - relevant %d days",
+        LogSerial_Verbose2("parseAllDayEventInstance: Event %s (start %d end %d) - relevant %d days",
                                 pEvents[*pEventIndex].name, dateStartInt, dateEndInt, relevantDays);
     }
 
@@ -534,7 +541,7 @@ uint32_t parseAllDayEvent(entry_t *pEvents, int *pEventIndex, int maxEvents, cha
         relevantDays = parseAllDayEventInstance(pEvents, pEventIndex, maxEvents, dateStartInt, dateEndInt);
     }
 
-    LogSerial_Info("parseAllDayEvent: Event %s (recurred %u times based on start %.*s rule %s) - relevant %d days",
+    LogSerial_Info("parseAllDayEvent: Event %s (recurred %" PRIu32 " times based on start %.*s rule %s) - relevant %d days",
                       pEvents[*pEventIndex].name, eventInstances, 8, dateStart, (recurRule != NULL ? recurRule : "unset"), relevantDays);
 
     return relevantDays;
@@ -563,7 +570,7 @@ char *parsePartialDataForEvents(char *rawData, void *context)
 
         // Find next event start and end
         i = strstr(rawData + i, "BEGIN:VEVENT") - rawData + 12;
-        LogSerial_Verbose1("Found Event Start at %d", i);
+        LogSerial_Verbose1("Found Event Start at %ld", i);
 
         char *end = strstr(rawData + i, "END:VEVENT");
 
@@ -625,7 +632,7 @@ char *parsePartialDataForEvents(char *rawData, void *context)
             recurRule = recurRuleSearch + strlen("RRULE:");
         }
 
-        LogSerial_Verbose2("Finished finding fields for event %d (so far: relevant %d, total %d)",
+        LogSerial_Verbose2("Finished finding fields for event %d (so far: relevant % " PRIu64 ", total %" PRIu64 ")",
                                                  entriesNum, allRelevantEvents, allEvents);
 
         entry_SetColour(&entries[entriesNum], pCal->eventColour);
@@ -663,7 +670,7 @@ char *parsePartialDataForEvents(char *rawData, void *context)
                 getToFrom(entries[entriesNum].time, timeStart, timeEnd, &entries[entriesNum].day,
                           &entries[entriesNum].timeStamp);
 
-                LogSerial_Verbose1("Determined day to be: %d", entries[entriesNum].day);
+                LogSerial_Verbose1("Determined day to be: %" PRIu8, entries[entriesNum].day);
             
                 if (entries[entriesNum].day >= 0)
                 {

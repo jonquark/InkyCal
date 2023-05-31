@@ -120,6 +120,10 @@ uint32_t runEventMatchRules(const ProcessingRule_t *pEventRules, entry_t *entryp
                 case INKYR_RESULT_SETCOLOUR:
                     entry_SetColour(entryptr, pEventRules->ResultArg);
                     break;
+
+                case INKYR_RESULT_SETSORTTIE:
+                    entryptr->sortTieBreak = (int8_t)pEventRules->ResultArg;
+                    break;
             }       
         }
 

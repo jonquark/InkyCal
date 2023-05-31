@@ -14,6 +14,7 @@ typedef struct {
     const char *url;
     const ProcessingRule_t *EventRules;
     int8_t eventColour;
+    int8_t sortTieBreak; //higher number, higher up display
 } Calendar_t;
 
 typedef struct {
@@ -29,7 +30,8 @@ extern int timeZone;
 //returns 0 on error or number of types (not including \0 added to buffer)
 uint32_t  getTimeStringNow(char *buffer, size_t maxlen);
 
-void getDateStringOffset(char* timeStr, long offSet, bool inclYear);
+//Get String representing day some number of days after calendar start time
+void getDateStringOffsetDays(char* timeStr, int32_t offsetDays, bool inclYear);
 
 //context will get cast to a CalendarParsingContext_t *
 //returns pointer to first unparsed data (or NULL on error)

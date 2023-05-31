@@ -58,7 +58,8 @@
 char ssid[] = WIFI_SSID;
 char pass[] = WIFI_PASSWORD;
 
-int timeZone = TIMEZONE_OFFSET_GMT;
+int timeZone = 1; //TODO: remove this
+char timezoneString[] = POSIX_TIMEZONE;
 
 // Set to 3 to flip the screen 180 degrees
 #define ROTATION 3
@@ -112,7 +113,7 @@ void setup()
     display.setTextWrap(false);
     display.setTextColor(0, 7);
 
-    network.begin();
+    network.begin(timezoneString);
 
     resetEntries();
 
@@ -268,7 +269,7 @@ void drawGrid()
 
         // Display day info using time offset
         char temp[16];
-        getDateStringOffset(temp, i * 3600L * 24, false);
+        getDateStringOffsetDays(temp, i, false);
 
         // calculate where to put text and print it
         display.setCursor(17 + (int)((float)x1 + (float)i * (float)(x2 - x1) / (float)m) + 15, y1 + header - 9);

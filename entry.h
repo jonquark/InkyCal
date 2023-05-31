@@ -19,6 +19,7 @@ typedef struct entry
     char location[128];
     time_t timeStamp;
     int8_t day = -1;
+    int8_t sortTieBreak; //higher number, higher up display
     int8_t bgColour;
     int8_t fgColour;
 } entry_t;

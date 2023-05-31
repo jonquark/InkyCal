@@ -16,14 +16,19 @@
 extern Calendar_t Calendars[];
 //end stuff from secrets.h
 
+#define INKYC_ADDTIME_DAYS   0
+#define INKYC_ADDTIME_WEEKS  1
+#define INKYC_ADDTIME_MONTHS 2
+#define INKYC_ADDTIME_YEARS  3
+
 typedef struct recurringEventInfo
 {
     time_t initialStart;
     time_t initialEnd;
     time_t repeatUntil;
     uint32_t durationSecs;
-    uint32_t recurrenceType;
-    uint32_t recurrenceInterval; //count of number of units (unit type defined by recurrenceType)
+    uint32_t recurrenceType; //One of the INKYC_ADDTIME_* constants
+    int32_t recurrenceInterval; //count of number of units (unit type defined by recurrenceType)
     int32_t instancesRemaining; //Including currentInstance => -1 means no limit
     //bool daysFilter[7];  //Not yet implement - probably also want a flag to see filtering needed? 
     time_t currentStart;
@@ -32,29 +37,63 @@ typedef struct recurringEventInfo
     uint32_t currentEndYYYYMMDDInt;  
 } recurringEventInfo_t;
 
-#define INKY_RECUR_TYPE_WEEKLY  1
-
-
 uint64_t allEvents = 0;
 uint64_t allRelevantEvents = 0;
 
+
+// Adds days days, weeks, months or years to a time_t in local timezone
+// (days may be e.g. 23 hours is timezone changes)
+// inputime        - start time for calculation
+// offset (input)  - measured in units determined by offsetUnits
+// offsetUnits     - One of the INKYC_ADDTIME_* constants
+static time_t addTime(time_t inputTime, int32_t offset, uint32_t offsetUnits)
+{
+    struct tm timeInfo;
+
+    localtime_r(&inputTime, &timeInfo);
+    timeInfo.tm_isdst = -1; //calculate based on tz data
+
+    switch(offsetUnits)
+    {
+        case INKYC_ADDTIME_DAYS:
+            timeInfo.tm_mday += offset;
+            break;
+        
+        case INKYC_ADDTIME_WEEKS:
+            timeInfo.tm_mday += offset * 7;
+            break;
+        
+        case INKYC_ADDTIME_MONTHS:
+            timeInfo.tm_mon += offset;
+            break;
+        
+        case INKYC_ADDTIME_YEARS:
+            timeInfo.tm_year += offset;
+            break;
+        
+        default:
+            LogSerial_Error("addTime: Invalid unit for adding time: %" PRIu32, offsetUnits);
+            logProblem(INKY_SEVERITY_ERROR);
+            timeInfo.tm_year += 1000; //Change time to something outside calendar range to help avoid infinite loops
+            break;
+    }
+
+    return mktime(&timeInfo);
+}
+
 //Puts a string representation of a date into
 //timestr.
-// input: unixtime: seconds since 1.1.1970
+// input: timeinfo
 // input: inclYear - true if year should be included in string
 // output: timestr: same format as ctime()/asctime() but without time and \n e.g.
 //     Wed Jun 30 1993   (with year -15 chars + \0)
 //     Wed Jun 30        (w/o year - 10 chars + \0)
 
-void getDateString(char *timeStr, time_t unixtime, bool inclYear)
+void getDateString(char *timeStr, struct tm *pTimeinfo, bool inclYear)
 {
-    //Convert time in unixtime (seconds since 1.1.1970) to a tm struct
-    struct tm timeinfo;
-    gmtime_r(&unixtime, &timeinfo);
-
     char tempTimeAndDateString[26];
     // Copies time+date string into temporary buffer
-    strcpy(tempTimeAndDateString, asctime(&timeinfo));
+    asctime_r(pTimeinfo, tempTimeAndDateString);
 
     if (inclYear)
     {
@@ -72,28 +111,30 @@ void getDateString(char *timeStr, time_t unixtime, bool inclYear)
 
 //Puts a string representation of a date into
 //timestr.
-// input: offset: seconds into the future from now
+// input: offset: days into the future from calendar start time
 // input: inclYear - true if year should be included in string
 // output: timestr: same format as ctime()/asctime() but without time and \n e.g.
 //     Wed Jun 30 1993   (with year -16 chars including \0)
 //     Wed Jun 30        (w/o year - 11 chars including \0)"
 
-void getDateStringOffset(char* timeStr, long offSet, bool inclYear)
+void getDateStringOffsetDays(char* timeStr, int32_t offsetDays, bool inclYear)
 {
     // Get seconds since 1.1.1970
-    //TODO: Consider timezone handling
-    time_t nowSecs = time(nullptr) + (long)timeZone * 3600L + offSet;
+    time_t offsetepoch = addTime(time(nullptr), offsetDays, INKYC_ADDTIME_DAYS);
+    
+    struct tm offset_tm;
+    localtime_r(&offsetepoch, &offset_tm);
+    offset_tm.tm_isdst = -1; //if mktime is called on this, figure out is DST is in operation
 
-    getDateString(timeStr, nowSecs, inclYear);
+    getDateString(timeStr, &offset_tm, inclYear);
 }
 
 //returns 0 on error or number of types (not including \0 added to buffer)
 uint32_t  getTimeStringNow(char *buffer, size_t maxlen)
 {
-    //TODO: Consider timezone handling
-    time_t nowSecs = time(nullptr) + (long)timeZone * 3600L;
+    time_t nowSecs = time(nullptr);
     struct tm now_tm;
-    gmtime_r(&nowSecs, &now_tm);
+    localtime_r(&nowSecs, &now_tm);
 
     return strftime(buffer, maxlen, "%Y-%m-%d %H:%M", &now_tm);
 }
@@ -117,11 +158,11 @@ time_t convertYYYYMMDDTHHMMSSZtoEpochTime(const char *strYYYYMMDDTHHMMSSZ)
     temp[4] = temp[7] = temp[13] = temp[16] = '-';
 
     strptime(temp, "%Y-%m-%dT%H-%M-%SZ", &ltm);
+    ltm.tm_isdst = -1; //Figure out whether DST is in operation
 
-    //TODO: consider suspect timezone handling
-    time_t epochtime_local = mktime(&ltm) + (time_t)timeZone * 3600L;
+    time_t epochtime = mktime(&ltm);
 
-    return epochtime_local;
+    return epochtime;
 }
 
 //Used in initialiseRecurringAllDayEvent
@@ -141,11 +182,11 @@ time_t convertYYYYMMDDtoEpochTime(const char *dayYYYYMMDD)
     temp[4] = temp[7] = '-';
 
     strptime(temp, "%Y-%m-%dT", &ltm);
+    ltm.tm_isdst = -1; //Figure out whether DST is in operation
 
-    //TODO: consider suspect timezone handling
-    time_t epochtime_local = mktime(&ltm) + (time_t)timeZone * 3600L;
+    time_t epochtime = mktime(&ltm);
 
-    return epochtime_local;
+    return epochtime;
 }
 
 int convertEpochTimeToYYYYMMDD(time_t inputTime)
@@ -153,7 +194,8 @@ int convertEpochTimeToYYYYMMDD(time_t inputTime)
     char temp[10];
 
     struct tm day_tm;
-    gmtime_r(&inputTime, &day_tm);
+    localtime_r(&inputTime, &day_tm);
+    
     strftime(temp, 9, "%Y%m%d", &day_tm);
     long day = strtol(temp, NULL, 10);
 
@@ -172,16 +214,52 @@ bool initialiseRecurringAllDayEvent(recurringEventInfo_t *toinit,
 
     //Parse recurrence rule. Example rule:
     //RRULE:FREQ=WEEKLY;WKST=MO;COUNT=26;INTERVAL=2;BYDAY=FR
+    bool freqValid = false;
 
-    char *weeklyindicator = strstr(recurrenceRule, "FREQ=WEEKLY");
+    char *dailyindicator = strstr(recurrenceRule, "FREQ=DAILY");
 
-    if (weeklyindicator != NULL)
+    if (dailyindicator != NULL)
     {
-        toinit->recurrenceType = INKY_RECUR_TYPE_WEEKLY;      
+        toinit->recurrenceType = INKYC_ADDTIME_DAYS;
+        freqValid = true;     
     }
-    else
+
+    if (!freqValid)
     {
-        LogSerial_FatalError("Currently can only parse weekly recurring event but got recur rule: %s",  recurrenceRule);
+        char *weeklyindicator = strstr(recurrenceRule, "FREQ=WEEKLY");
+
+        if (weeklyindicator != NULL)
+        {
+            toinit->recurrenceType = INKYC_ADDTIME_WEEKS;
+            freqValid = true;     
+        }
+    }
+    
+     if (!freqValid)
+    {
+        char *monthlyindicator = strstr(recurrenceRule, "FREQ=MONTHLY");
+
+        if (monthlyindicator != NULL)
+        {
+            toinit->recurrenceType = INKYC_ADDTIME_MONTHS;
+            freqValid = true;     
+        }
+    }
+
+    if (!freqValid)
+    {
+        char *yearlyindicator = strstr(recurrenceRule, "FREQ=YEARLY");
+
+        if (yearlyindicator != NULL)
+        {
+            toinit->recurrenceType = INKYC_ADDTIME_YEARS;
+            freqValid = true;     
+        }
+    }
+   
+    if (!freqValid)
+    {
+        LogSerial_FatalError("Currently can only parse daily/weekly/monthly/yearly recurring event but got recur rule: %s",  recurrenceRule);
         logProblem(INKY_SEVERITY_FATAL);        
         return false; 
     }
@@ -325,12 +403,13 @@ bool getNextOccurence(recurringEventInfo_t *recurInfo)
         {
             time_t timedelta = 0;
 
-            if (recurInfo->recurrenceType == INKY_RECUR_TYPE_WEEKLY)
-            {
-                timedelta = 7*24*60*60 * recurInfo->recurrenceInterval;
-            }
-            recurInfo->currentStart += timedelta;
-            recurInfo->currentEnd +=  timedelta;
+            recurInfo->currentStart = addTime(recurInfo->currentStart, 
+                                              recurInfo->recurrenceInterval,
+                                              recurInfo->recurrenceType);
+
+            recurInfo->currentEnd   = addTime(recurInfo->currentEnd,
+                                              recurInfo->recurrenceInterval,
+                                              recurInfo->recurrenceType);
 
             if (recurInfo->instancesRemaining > 0)
             {
@@ -368,33 +447,36 @@ void getToFrom(char *dst, char *from, char *to, int8_t *day, time_t *timeStamp)
 
     LogSerial_Verbose2(">>> getToFrom (will cpy from addresses %ld and %ld)", from, to);
 
-    time_t from_epochtime_local = convertYYYYMMDDTHHMMSSZtoEpochTime(from);
+    time_t from_epochtime = convertYYYYMMDDTHHMMSSZtoEpochTime(from);
 
     struct tm from_tm_local;
-    gmtime_r(&from_epochtime_local, &from_tm_local);
+    localtime_r(&from_epochtime, &from_tm_local);
+    from_tm_local.tm_isdst = -1;
+
     strncpy(dst, asctime(&from_tm_local) + 11, 5);
 
     dst[5] = '-';
 
-    time_t to_epochtime_local = convertYYYYMMDDTHHMMSSZtoEpochTime(to);
+    time_t to_epochtime = convertYYYYMMDDTHHMMSSZtoEpochTime(to);
     
     struct tm to_tm_local;
-    gmtime_r(&to_epochtime_local, &to_tm_local);
+    localtime_r(&to_epochtime, &to_tm_local);
+    to_tm_local.tm_isdst = -1;
     strncpy(dst + 6, asctime(&to_tm_local) + 11, 5);
 
     dst[11] = 0;
 
-    *timeStamp = from_epochtime_local;
+    *timeStamp = from_epochtime;
 
     char eventDateString[16];
-    getDateString(eventDateString, from_epochtime_local, true);
+    getDateString(eventDateString, &from_tm_local, true);
 
     bool matchedDay= false;
 
     for (int daynum = 0; daynum < DAYS_SHOWN; daynum++)
     {
         char dayDateString[16];
-        getDateStringOffset(dayDateString, daynum*24*3600L, true);
+        getDateStringOffsetDays(dayDateString, daynum, true);
 
         if (strcmp(eventDateString, dayDateString) == 0)
         {
@@ -433,11 +515,16 @@ uint32_t parseAllDayEventInstance(entry_t *pEvents, int *pEventIndex, int maxEve
 
     int relevantDays = 0;
 
+    time_t nowepoch = time(nullptr);
+    struct tm timeinfo;
+    
+    localtime_r(&nowepoch, &timeinfo);
+    timeinfo.tm_isdst = -1; //figure it out based on tz info    
+
     for (int daynum = 0; daynum < DAYS_SHOWN; daynum++)
     {
         //Get day in the form YYYYMMDD then convert to int: dayInt
-        //TODO: Consider timezone handling
-        time_t dayunixtime = time(nullptr) + (long)timeZone * 3600L +  daynum * 24 * 3600L;
+        time_t dayunixtime = mktime(&timeinfo);
         int dayInt = convertEpochTimeToYYYYMMDD(dayunixtime);
       
         LogSerial_Verbose2("Comparing day %d to event start %d and end %d\n", dayInt, dateStartInt, dateEndInt);        
@@ -462,11 +549,12 @@ uint32_t parseAllDayEventInstance(entry_t *pEvents, int *pEventIndex, int maxEve
                     //Work out timestamp for midnight at start of this day
                     struct tm midnight_tm;
                     
-                    gmtime_r(&dayunixtime, &midnight_tm);
+                    localtime_r(&dayunixtime, &midnight_tm);
 
                     midnight_tm.tm_sec = 0;
                     midnight_tm.tm_min = 0;
-                    midnight_tm.tm_hour = timeZone;
+                    midnight_tm.tm_hour = 0;
+                    midnight_tm.tm_isdst = -1; //figure out if dst is in force
                     pEvents[(*pEventIndex)].timeStamp = mktime(&midnight_tm);
 
                     
@@ -480,6 +568,15 @@ uint32_t parseAllDayEventInstance(entry_t *pEvents, int *pEventIndex, int maxEve
                 }
             }          
         }
+
+        //Now update for the next day
+        timeinfo.tm_mday +=1;
+
+        //Convert from day Jan 32nd back to human dates by going to/from epoch time
+        time_t dayepochtime;
+        dayepochtime = mktime(&timeinfo);
+        localtime_r(&dayepochtime, &timeinfo);
+        timeinfo.tm_isdst = -1; //dst active is based on tz info
     }
 
     if (relevantDays > 0)
@@ -636,7 +733,8 @@ char *parsePartialDataForEvents(char *rawData, void *context)
                                                  entriesNum, allRelevantEvents, allEvents);
 
         entry_SetColour(&entries[entriesNum], pCal->eventColour);
-
+        entries[entriesNum].sortTieBreak =  pCal->sortTieBreak;
+        
         if (summary && summary < end)
         {
             strncpy(entries[entriesNum].name, summary, strchr(summary, '\n') - summary);

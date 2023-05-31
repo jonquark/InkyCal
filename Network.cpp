@@ -16,7 +16,7 @@
 //Try to parse data only when we have at least this many bytes
 #define INKY_NETWORK_MINIMUM_CHUNK_SIZE 50000
 
-void Network::begin()
+void Network::begin(const char *timeZoneString)
 {
     // Initiating wifi, like in BasicHttpClient example
     WiFi.mode(WIFI_STA);
@@ -43,7 +43,7 @@ void Network::begin()
     Serial.println(F(" connected"));
 
     // Find internet time
-    setTime();
+    setTime(timeZoneString);
 }
 
 // Function to get all data from web
@@ -220,7 +220,7 @@ int Network::getData(const char *url, size_t maxbufsize,  dataParsingFn_t parser
     return rc;
 }
 
-void Network::setTime()
+void Network::setTime(const char *timeZoneString)
 {
     // Used for setting correct time
     configTime(0, 0, "pool.ntp.org", "time.nist.gov");
@@ -237,10 +237,22 @@ void Network::setTime()
 
     Serial.println();
 
+    //Set the Timezone
+    //Timezone handling based on:
+    //  https://randomnerdtutorials.com/esp32-ntp-timezones-daylight-saving/
+    setenv("TZ", timeZoneString ,1);
+    tzset();    
+
     // Used to store time info
     struct tm timeinfo;
     gmtime_r(&nowSecs, &timeinfo);
 
-    Serial.print(F("Current time: "));
-    Serial.print(asctime(&timeinfo));
+    char temp[26];
+    Serial.print(F("Current UTC time: "));
+    Serial.print(asctime_r(&timeinfo, temp));
+
+    localtime_r(&nowSecs, &timeinfo);
+
+    Serial.print(F("Current local time: "));
+    Serial.print(asctime_r(&timeinfo, temp));
 }

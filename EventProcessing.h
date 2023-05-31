@@ -26,7 +26,7 @@ typedef struct ProcessingRule_t {
 #define INKYR_RESULT_DISCARD                  1
 #define INKYR_RESULT_SETCOLOUR                2
 #define INKYR_RESULT_SETCOLOR                 INKYR_RESULT_SETCOLOUR
-
+#define INKYR_RESULT_SETSORTTIE               3
 
 uint32_t runEventMatchRules(const ProcessingRule_t *pEventRules, entry_t *entryptr,  const char *entrydesc, const char *recurRule);
 

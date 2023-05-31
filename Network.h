@@ -11,9 +11,6 @@
 #include <WiFi.h>
 #include <WiFiClientSecure.h>
 
-// To get timeZone from main file
-extern int timeZone;
-
 // Wifi ssid and password
 extern char ssid[];
 extern char pass[];
@@ -38,12 +35,12 @@ class Network
 {
   public:
     // Functions we can access in main file
-    void begin();
+    void begin(const char *timeZoneString);
     int getData(const char *url, size_t maxbufsize, dataParsingFn_t parser, void *parsingContext);
 
   private:
     // Functions called from within our class
-    void setTime();
+    void setTime(const char *timeZoneString);
 };
 
 #endif

@@ -4,6 +4,7 @@
    Foundation, either version 3 of the License, or (at your option) any later 
    version.
 */
+#include <string.h>
 
 #include "entry.h"
 #include "InkyCalInternal.h"
@@ -35,13 +36,31 @@ void resetEntries(void)
 
 
 
-// Struct event comparison function, by timestamp, used for qsort later on
+// Struct event comparison function, by timestamp then sortTie 
+//used for qsort below
 int cmp(const void *a, const void *b)
 {
     entry_t *entryA = (entry_t *)a;
     entry_t *entryB = (entry_t *)b;
+    int sortresult;
 
-    return (entryA->timeStamp - entryB->timeStamp);
+    if (entryA->timeStamp != entryB->timeStamp)
+    {
+        //earlier timestamp higher up display
+        sortresult = entryA->timeStamp - entryB->timeStamp;
+    }
+    else if (entryA->sortTieBreak != entryB->sortTieBreak)
+    {
+        //sort order for tie break is opposite to timestamp - higher sort tie is higher up display
+        sortresult = (int)entryB->sortTieBreak - (int)entryA->sortTieBreak;
+    }
+    else
+    {
+        //anything to try and ensure consistent order so entries don't "jumble" on refresh
+        sortresult = strcmp(entryA->name, entryB->name);
+    }
+
+    return sortresult;
 }
 
 void SortEntries(void)

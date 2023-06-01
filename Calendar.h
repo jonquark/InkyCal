@@ -23,11 +23,14 @@ typedef struct {
     uint64_t calRelevantEvents = 0;
 } CalendarParsingContext_t;
 
-extern int timeZone;
+//Sets the time period to find events for
+// input: calendarStart (epoch time) - indicates the first day 
+//                       (doesn't have to be midnight - first day is localtime day containing
+//                        that time_t)
+// input: numDays - number of days including the first day that events are relevant for
+void setCalendarRange(time_t calendarStart, uint32_t numDays);
 
-#define DAYS_SHOWN 3
-
-//returns 0 on error or number of types (not including \0 added to buffer)
+//returns 0 on error or number of chars (not including \0 added to buffer)
 uint32_t  getTimeStringNow(char *buffer, size_t maxlen);
 
 //Get String representing day some number of days after calendar start time

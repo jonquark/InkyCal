@@ -58,7 +58,6 @@
 char ssid[] = WIFI_SSID;
 char pass[] = WIFI_PASSWORD;
 
-int timeZone = 1; //TODO: remove this
 char timezoneString[] = POSIX_TIMEZONE;
 
 // Set to 3 to flip the screen 180 degrees
@@ -92,11 +91,14 @@ uint64_t loggedFatals   = 0;
 
 uint32_t numCalendars = 0;
 
+//Number of days shown - much of display code not yet modified to use this
+// and hardcodes 3
+#define DAYS_SHOWN 3 
+
 
 // All our functions declared below setup and loop
 bool parseAllCalendars();
 void drawInfo();
-void drawTime();
 void drawGrid();
 bool drawEvent(entry_t *event, int day, int beginY, int maxHeigth, int *heigthNeeded);
 void drawData();
@@ -116,6 +118,17 @@ void setup()
     network.begin(timezoneString);
 
     resetEntries();
+
+    time_t calendarStart = time(nullptr);
+
+    //Uncomment to show calendar at a fixed time - not "now"
+    //struct tm sometime={0};
+    //char timetemp[]="2023-10-27T11:11:00";
+    //strptime(timetemp, "%Y-%m-%dT%H:%M:%S", &sometime);
+    //sometime.tm_isdst = -1;
+    //calendarStart = mktime(&sometime);
+
+    setCalendarRange(calendarStart, 3);
 
     if ( parseAllCalendars() ) // Try getting data
     {

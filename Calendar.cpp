@@ -40,6 +40,21 @@ typedef struct recurringEventInfo
 uint64_t allEvents = 0;
 uint64_t allRelevantEvents = 0;
 
+//set using setCalendarRange()
+static time_t CalendarStart; //First day of calendar is day containing this timestamp
+static uint32_t DaysRelevent;
+
+
+//Sets the time period to find events for
+// input: calendarStart (epoch time) - indicates the first day 
+//                       (doesn't have to be midnight - first day is localtime day containing
+//                        that time_t)
+// input: numDays - number of days including the first day that events are relevant for
+void setCalendarRange(time_t calendar_start, uint32_t numDays)
+{
+    CalendarStart = calendar_start;
+    DaysRelevent = numDays;
+}
 
 // Adds days days, weeks, months or years to a time_t in local timezone
 // (days may be e.g. 23 hours is timezone changes)
@@ -94,7 +109,6 @@ void getDateString(char *timeStr, struct tm *pTimeinfo, bool inclYear)
     char tempTimeAndDateString[26];
     // Copies time+date string into temporary buffer
     asctime_r(pTimeinfo, tempTimeAndDateString);
-
     if (inclYear)
     {
         //Move the year+\n\0 on top of the time in the string from asctime()
@@ -120,7 +134,7 @@ void getDateString(char *timeStr, struct tm *pTimeinfo, bool inclYear)
 void getDateStringOffsetDays(char* timeStr, int32_t offsetDays, bool inclYear)
 {
     // Get seconds since 1.1.1970
-    time_t offsetepoch = addTime(time(nullptr), offsetDays, INKYC_ADDTIME_DAYS);
+    time_t offsetepoch = addTime(CalendarStart, offsetDays, INKYC_ADDTIME_DAYS); 
     
     struct tm offset_tm;
     localtime_r(&offsetepoch, &offset_tm);
@@ -129,10 +143,12 @@ void getDateStringOffsetDays(char* timeStr, int32_t offsetDays, bool inclYear)
     getDateString(timeStr, &offset_tm, inclYear);
 }
 
+//Returns time now (not calendar start time)
+//for e.g. "Updated at " tyupe of uses
 //returns 0 on error or number of types (not including \0 added to buffer)
 uint32_t  getTimeStringNow(char *buffer, size_t maxlen)
 {
-    time_t nowSecs = time(nullptr);
+    time_t nowSecs = time(nullptr);  
     struct tm now_tm;
     localtime_r(&nowSecs, &now_tm);
 
@@ -473,7 +489,7 @@ void getToFrom(char *dst, char *from, char *to, int8_t *day, time_t *timeStamp)
 
     bool matchedDay= false;
 
-    for (int daynum = 0; daynum < DAYS_SHOWN; daynum++)
+    for (int daynum = 0; daynum < DaysRelevent; daynum++)
     {
         char dayDateString[16];
         getDateStringOffsetDays(dayDateString, daynum, true);
@@ -515,13 +531,13 @@ uint32_t parseAllDayEventInstance(entry_t *pEvents, int *pEventIndex, int maxEve
 
     int relevantDays = 0;
 
-    time_t nowepoch = time(nullptr);
+    time_t nowepoch = CalendarStart;
     struct tm timeinfo;
     
     localtime_r(&nowepoch, &timeinfo);
     timeinfo.tm_isdst = -1; //figure it out based on tz info    
 
-    for (int daynum = 0; daynum < DAYS_SHOWN; daynum++)
+    for (int daynum = 0; daynum < DaysRelevent; daynum++)
     {
         //Get day in the form YYYYMMDD then convert to int: dayInt
         time_t dayunixtime = mktime(&timeinfo);
@@ -581,7 +597,7 @@ uint32_t parseAllDayEventInstance(entry_t *pEvents, int *pEventIndex, int maxEve
 
     if (relevantDays > 0)
     {
-        LogSerial_Info("parseAllDayEventInstance: Event %s (start %d end %d) - relevant %d days",
+        LogSerial_Verbose1("parseAllDayEventInstance: Event %s (start %d end %d) - relevant %d days",
                                 pEvents[*pEventIndex].name, dateStartInt, dateEndInt, relevantDays);
     }
     else
@@ -638,8 +654,16 @@ uint32_t parseAllDayEvent(entry_t *pEvents, int *pEventIndex, int maxEvents, cha
         relevantDays = parseAllDayEventInstance(pEvents, pEventIndex, maxEvents, dateStartInt, dateEndInt);
     }
 
-    LogSerial_Info("parseAllDayEvent: Event %s (recurred %" PRIu32 " times based on start %.*s rule %s) - relevant %d days",
+    if (relevantDays > 0)
+    {
+        LogSerial_Info("parseAllDayEvent: Event %s (recurred %" PRIu32 " times based on start %.*s rule %s) - relevant %d days",
                       pEvents[*pEventIndex].name, eventInstances, 8, dateStart, (recurRule != NULL ? recurRule : "unset"), relevantDays);
+    }
+    else
+    {
+        LogSerial_Verbose1("parseAllDayEvent: Event %s (recurred %" PRIu32 " times based on start %.*s rule %s) - relevant %d days",
+                      pEvents[*pEventIndex].name, eventInstances, 8, dateStart, (recurRule != NULL ? recurRule : "unset"), relevantDays);
+    }
 
     return relevantDays;
 }
@@ -678,8 +702,8 @@ char *parsePartialDataForEvents(char *rawData, void *context)
         }
         else
         {
-            LogSerial_Info("Found event without end (position %ld) - won't parse %ld bytes", i, n-i);
-            LogSerial_Verbose1("Unparsed event fragment:\n%s", rawData + i);
+            LogSerial_Verbose1("Found event without end (position %ld) - won't parse %ld bytes", i, n-i);
+            LogSerial_Verbose2("Unparsed event fragment:\n%s", rawData + i);
             goto mod_exit;
         }
 

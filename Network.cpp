@@ -201,7 +201,7 @@ int Network::getData(const char *url, size_t maxbufsize,  dataParsingFn_t parser
                 totalParsed += justparsed;
                 n -= justparsed;
                 memmove(databuf, unparseddata, n);
-                LogSerial_Info("Left over %" PRIu64 " bytes of data after final parse: %s", n, databuf); 
+                LogSerial_Verbose1("Left over %" PRIu64 " bytes of data after final parse: %s", n, databuf); 
             }
         }
         LogSerial_Info("In total, parsed bytes of data: %" PRIu64, totalParsed);

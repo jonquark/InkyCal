@@ -17,5 +17,6 @@
 
 * Currently works with Inkplate Library 7.0.0 (easy to change version in "Library Manager" - investigate crashes with 8.0.0)
 
-* Stop using "now" and change to calendar start time
+* events like birthdays that don't "stop" - don't need more occurrences if already in future 
 
+* fix more events that didn't parse e.g. DTSTART;TZID=Europe/London:20181127T193000

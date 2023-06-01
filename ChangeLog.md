@@ -3,10 +3,9 @@ but there are lots of changes:
 
 Features:
 
-* Lots more (configurably) diagnostic logging
-* Can set rules to filter events or e.g. change the colour used
 * Can get events from multiple calendars
-
+* Can set rules to filter events or e.g. change the colour used
+* Lots more (configurably) diagnostic logging
 
 Fixes:
 
@@ -21,4 +20,6 @@ Fixes:
 
 * To map events to columns it compared "if (strncmp(day2, asctime(&event), 10) == 0)" - first 10 chars
   of asctime output don't include the year
+
+* Timezone handling fixed to work across DST boundaries
  

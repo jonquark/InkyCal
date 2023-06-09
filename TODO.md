@@ -19,4 +19,8 @@
 
 * events like birthdays that don't "stop" - don't need more occurrences if already in future 
 
-* fix more events that didn't parse e.g. DTSTART;TZID=Europe/London:20181127T193000
+* fix more events that didn't parse and do something with timezone info we now parse
+
+* add a logProblem counter for LogSerial_Unusual() (counter to be shown in normal operation?)
+
+* no length checking of summary/location when putting into structure

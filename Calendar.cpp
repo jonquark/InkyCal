@@ -674,8 +674,8 @@ char *parsePartialDataForEvents(char *rawData, void *context)
     CalendarParsingContext_t *calContext = (CalendarParsingContext_t *)context;  
     Calendar_t *pCal = calContext->pCal;
 
-    long i = 0;
-    long n = strlen(rawData);
+    long scanpos = 0;
+    long bytesAvail = strlen(rawData);
 
     uint64_t batchEvents = 0;
     uint64_t batchEventsRelevant = 0;
@@ -685,15 +685,27 @@ char *parsePartialDataForEvents(char *rawData, void *context)
     char *unparseddata = rawData;    
 
     // Search raw data for events
-    while (i < n && strstr(rawData + i, "BEGIN:VEVENT"))
+    while (scanpos < bytesAvail)
     { 
         eventRelevant = false;
 
         // Find next event start and end
-        i = strstr(rawData + i, "BEGIN:VEVENT") - rawData + 12;
-        LogSerial_Verbose1("Found Event Start at %ld", i);
+        char *startSearch = strstr(rawData + scanpos, "BEGIN:VEVENT");
+        char *start;
+    
+        if (startSearch)
+        {
+            LogSerial_Verbose1("Found Event Start at %ld", startSearch - rawData);
+            start = startSearch + strlen("BEGIN:VEVENT");
+        }
+        else
+        {
+            LogSerial_Verbose2("Found no event in last %ld bytes", bytesAvail - scanpos);
+            goto mod_exit;          
+        }
 
-        char *end = strstr(rawData + i, "END:VEVENT");
+
+        char *end = strstr(start, "END:VEVENT");
 
         if (end)
         {
@@ -702,19 +714,20 @@ char *parsePartialDataForEvents(char *rawData, void *context)
         }
         else
         {
-            LogSerial_Verbose1("Found event without end (position %ld) - won't parse %ld bytes", i, n-i);
-            LogSerial_Verbose2("Unparsed event fragment:\n%s", rawData + i);
+            LogSerial_Verbose1("Found event without end (position %ld) - won't parse %ld bytes", start-rawData, bytesAvail-(start-rawData));
+            LogSerial_Verbose2("Unparsed event fragment:\n%s", start);
             goto mod_exit;
         }
 
+        scanpos = end - rawData;
+        size_t eventLength = end - start;
+
         // Find all relevant event data
-        char *summarySearch = strstr(rawData + i, "SUMMARY:");
-        char *locationSearch = strstr(rawData + i, "LOCATION:");
-        char *timeStartSearch = strstr(rawData + i, "DTSTART:");
-        char *timeEndSearch = strstr(rawData + i, "DTEND:");
-        char *dateStartSearch = strstr(rawData + i, "DTSTART;VALUE=DATE:");
-        char *dateEndSearch = strstr(rawData + i, "DTEND;VALUE=DATE:");
-        char *recurRuleSearch = strstr(rawData + i, "RRULE:");
+        char *summarySearch = (char *)memmem(start, eventLength, "SUMMARY:", strlen("SUMMARY:"));
+        char *locationSearch = (char *)memmem(start, eventLength, "LOCATION:", strlen("LOCATION:"));
+        char *dtStartSearch = (char *)memmem(start, eventLength, "DTSTART", strlen("DTSTART"));
+        char *dtEndSearch = (char *)memmem(start, eventLength, "DTEND", strlen("DTEND"));
+        char *recurRuleSearch = (char *)memmem(start, eventLength, "RRULE:", strlen("RRULE:"));
 
         char *summary = NULL;
         char *location = NULL;
@@ -723,6 +736,8 @@ char *parsePartialDataForEvents(char *rawData, void *context)
         char *dateStart = NULL;
         char *dateEnd = NULL;
         char *recurRule = NULL;
+        char *timeZone = NULL;
+        size_t timeZoneLength = 0;
 
         if (summarySearch)
         {
@@ -732,22 +747,89 @@ char *parsePartialDataForEvents(char *rawData, void *context)
         {
             location = locationSearch + strlen("LOCATION:");
         }
-        if (timeStartSearch)
+        if (dtStartSearch)
         {
-            timeStart = timeStartSearch + strlen("DTSTART:");
+            char *dtStart = dtStartSearch + strlen("DTSTART");
+
+            if (dtStart[0] == ':')
+            {
+                //Just a plain time - phew - timeStart is after colon
+                timeStart = dtStart + 1;
+            }
+            else
+            {
+                char *dtparamsEnd = strchr(dtStart, ':');
+                size_t dtparamsLen = dtparamsEnd - dtStart;
+
+                if (dtparamsEnd && dtparamsEnd < end)
+                {
+                    //Check for TZINFO of the form:
+                    //DTSTART;TZID=Europe/London:20181127T193000
+                    char *tzidStartSearch = (char *)memmem(dtStart, dtparamsLen,
+                                                           "TZID=", strlen("TZID="));
+
+                    if (tzidStartSearch)
+                    {
+                        timeZone = tzidStartSearch + strlen("TZID=");
+                        timeZoneLength = dtparamsEnd - timeZone;
+                        timeStart =  dtparamsEnd + 1; //+1 to go past ':' we are pointing at
+                    }
+                    else
+                    {
+                        //dates are of the form: DTSTART;VALUE=DATE:
+                        char *dateStartSearch = (char *)memmem(dtStart, dtparamsLen,
+                                                          "VALUE=DATE", strlen("VALUE=DATE"));
+          
+                        if (dateStartSearch)
+                        {
+                            dateStart = dtparamsEnd + 1; //+1 to go past ':' we are pointing at
+                        }
+                    }
+                }
+            }
         }
-        if (timeEndSearch)
+
+        if (dtEndSearch)
         {
-            timeEnd = timeEndSearch + strlen("DTEND:");
+            char *dtEnd = dtEndSearch + strlen("DTEND");
+
+            if (dtEnd[0] == ':')
+            {
+                //Just a plain time - phew - timeStart is after colon
+                timeEnd = dtEnd + 1;
+            }
+            else
+            {
+                char *dtparamsEnd = strchr(dtEnd, ':');
+                size_t dtparamsLen = dtparamsEnd - dtEnd;
+
+                if (dtparamsEnd && dtparamsEnd < end)
+                {
+                    //Check for TZINFO of the form:
+                    //DTSTART;TZID=Europe/London:20181127T193000
+                    char *tzidSearch = (char *)memmem(dtEnd, dtparamsLen,
+                                                           "TZID=", strlen("TZID="));
+
+                    if (tzidSearch)
+                    {
+                        //We don't do anything with a timezone in an end time... 
+                        timeEnd =  dtparamsEnd + 1; //+1 to go past ':' we are pointing at
+                    }
+                    else
+                    {
+                        //dates are of the form: DTSTART;VALUE=DATE:
+                        char *dateEndSearch = (char *)memmem(dtEnd, dtparamsLen,
+                                                          "VALUE=DATE", strlen("VALUE=DATE"));
+          
+                        if (dateEndSearch)
+                        {
+                            dateEnd = dtparamsEnd + 1; //+1 to go past ':' we are pointing at
+                        }
+                    }     
+                }
+            }
         }
-        if (dateStartSearch)
-        {
-            dateStart = dateStartSearch + strlen("DTSTART;VALUE=DATE:");
-        }
-        if (dateEndSearch)
-        {
-            dateEnd = dateEndSearch + strlen("DTEND;VALUE=DATE:");
-        }
+
         if (recurRuleSearch)
         {
             recurRule = recurRuleSearch + strlen("RRULE:");
@@ -759,23 +841,23 @@ char *parsePartialDataForEvents(char *rawData, void *context)
         entry_SetColour(&entries[entriesNum], pCal->eventColour);
         entries[entriesNum].sortTieBreak =  pCal->sortTieBreak;
         
-        if (summary && summary < end)
+        if (summary)
         {
+            LogSerial_Verbose1("Summary: %s", entries[entriesNum].name);
             strncpy(entries[entriesNum].name, summary, strchr(summary, '\n') - summary);
             entries[entriesNum].name[strchr(summary, '\n') - summary] = 0;
-            LogSerial_Verbose1("Summary: %s", entries[entriesNum].name);
         }
         else
         {
-            LogSerial_Unusual("Event with no summary: %.*s", end - rawData - i, rawData + i);
+            LogSerial_Unusual("Event with no summary: %.*s", eventLength, start);
             entries[entriesNum].name[0] = '\0';
         }
 
-        if (location && location < end)
+        if (location)
         {
+            LogSerial_Verbose1("Location: %s", entries[entriesNum].location);
             strncpy(entries[entriesNum].location, location, strchr(location, '\n') - location);
             entries[entriesNum].location[strchr(location, '\n') - location] = 0;
-            LogSerial_Verbose1("Location: %s", entries[entriesNum].location);
         }
         else
         {
@@ -787,7 +869,7 @@ char *parsePartialDataForEvents(char *rawData, void *context)
 
         if (matchresult != INKYR_RESULT_DISCARD)
         {
-            if (timeStart && timeEnd && timeStart < end && timeEnd < end)
+            if (timeStart && timeEnd)
             {
                 getToFrom(entries[entriesNum].time, timeStart, timeEnd, &entries[entriesNum].day,
                           &entries[entriesNum].timeStamp);
@@ -802,14 +884,14 @@ char *parsePartialDataForEvents(char *rawData, void *context)
             }
             else
             {
-                if (dateStart && dateEnd && dateStart < end && dateEnd < end)
+                if (dateStart && dateEnd)
                 {   
                     //Assume date in format YYYYMMDD
                     if (strnlen(dateStart, 8) >= 8 && strnlen(dateEnd, 8) >= 8)
                     {
                         //Null terminate recur rule if there is one
                         char recurRuleBuf[65];
-                        if (recurRule && recurRule < end)
+                        if (recurRule)
                         {
                             size_t rulelen = strchr(recurRule, '\n') - recurRule;
 
@@ -839,15 +921,15 @@ char *parsePartialDataForEvents(char *rawData, void *context)
                     else
                     {
                         LogSerial_Unusual("Event with no valid date info!");
-                        LogSerial_Unusual("Event with no valid date info - event length %ld", end - rawData - i);
-                        LogSerial_Unusual("Event with no valid date info: %.*s", end - rawData - i, rawData + i);
+                        LogSerial_Unusual("Event with no valid date info - event length %ld", eventLength);
+                        LogSerial_Unusual("Event with no valid date info: %.*s", eventLength, start);
                     }
                 }
                 else
                 {
                     LogSerial_Unusual("Event with no valid time info!");
-                    LogSerial_Unusual("Event with no valid time info - event length %ld", end - rawData - i);
-                    LogSerial_Unusual("Event with no valid time info: %.*s", end - rawData - i, rawData + i);
+                    LogSerial_Unusual("Event with no valid time info - event length %ld", eventLength);
+                    LogSerial_Unusual("Event with no valid time info: %.*s", eventLength, start);
                 }
             }
 

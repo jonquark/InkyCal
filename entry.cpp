@@ -5,6 +5,7 @@
    version.
 */
 #include <string.h>
+#include <stdlib.h>
 
 #include "entry.h"
 #include "InkyCalInternal.h"

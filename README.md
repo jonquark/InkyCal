@@ -14,3 +14,5 @@ but has been largely rewritten (aside from the display code). It has:
 * Support for filtering events
 
 More details are in the [ChangeLog](ChangeLog.md)
+
+Details of some unit tests can be found in the [test subdirectory](test)

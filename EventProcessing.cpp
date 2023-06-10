@@ -4,13 +4,17 @@
    Foundation, either version 3 of the License, or (at your option) any later 
    version.
 */
+#include <string.h>
+#include <ctype.h>
+#include <stdint.h>
+#include <inttypes.h>
 
 #include "InkyCalInternal.h"
 #include "EventProcessing.h"
 #include "entry.h"
 #include "LogSerial.h"
 
-#include <string.h>
+
 
 //Does case insensitive search
 static bool eventContains(entry_t *entryptr, const char *entrydesc, const char *searchString)

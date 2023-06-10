@@ -3,3 +3,6 @@
 #  rather than storing secrets.h in git)
 ######################################
 secrets.h
+#
+#Don't include the compiled tests in the git repo:
+test/bin

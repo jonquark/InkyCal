@@ -8,8 +8,6 @@
 #ifndef LOGSERIAL_H
 #define LOGSERIAL_H
 
-#include "Arduino.h"
-
 #define LOGSERIAL_LEVEL_SILENT         0
 #define LOGSERIAL_LEVEL_FATALERROR    10
 #define LOGSERIAL_LEVEL_ERROR         20

@@ -7,6 +7,9 @@
 
 #include "Calendar.h"
 #include <string.h>
+#include <stdint.h>
+#include <inttypes.h>
+#include <stdlib.h>
 
 #include "InkyCalInternal.h"
 #include "LogSerial.h"
@@ -232,7 +235,7 @@ bool initialiseRecurringAllDayEvent(recurringEventInfo_t *toinit,
     //RRULE:FREQ=WEEKLY;WKST=MO;COUNT=26;INTERVAL=2;BYDAY=FR
     bool freqValid = false;
 
-    char *dailyindicator = strstr(recurrenceRule, "FREQ=DAILY");
+    const char *dailyindicator = strstr(recurrenceRule, "FREQ=DAILY");
 
     if (dailyindicator != NULL)
     {
@@ -242,7 +245,7 @@ bool initialiseRecurringAllDayEvent(recurringEventInfo_t *toinit,
 
     if (!freqValid)
     {
-        char *weeklyindicator = strstr(recurrenceRule, "FREQ=WEEKLY");
+        const char *weeklyindicator = strstr(recurrenceRule, "FREQ=WEEKLY");
 
         if (weeklyindicator != NULL)
         {
@@ -253,7 +256,7 @@ bool initialiseRecurringAllDayEvent(recurringEventInfo_t *toinit,
     
      if (!freqValid)
     {
-        char *monthlyindicator = strstr(recurrenceRule, "FREQ=MONTHLY");
+        const char *monthlyindicator = strstr(recurrenceRule, "FREQ=MONTHLY");
 
         if (monthlyindicator != NULL)
         {
@@ -264,7 +267,7 @@ bool initialiseRecurringAllDayEvent(recurringEventInfo_t *toinit,
 
     if (!freqValid)
     {
-        char *yearlyindicator = strstr(recurrenceRule, "FREQ=YEARLY");
+        const char *yearlyindicator = strstr(recurrenceRule, "FREQ=YEARLY");
 
         if (yearlyindicator != NULL)
         {
@@ -280,12 +283,12 @@ bool initialiseRecurringAllDayEvent(recurringEventInfo_t *toinit,
         return false; 
     }
 
-    char *countindicator = strstr(recurrenceRule, "COUNT=");
+    const char *countindicator = strstr(recurrenceRule, "COUNT=");
 
     if (countindicator != NULL)
     {
-        char *countStrStart = countindicator + strlen("COUNT=");
-        char *countStrEnd = strchr(countStrStart, ';');
+        const char *countStrStart = countindicator + strlen("COUNT=");
+        const char *countStrEnd = strchr(countStrStart, ';');
         size_t countStrLen = strlen(countStrStart);
 
         if (countStrEnd != NULL)
@@ -318,12 +321,12 @@ bool initialiseRecurringAllDayEvent(recurringEventInfo_t *toinit,
       toinit->instancesRemaining = -1;
     }
 
-    char *untilindicator = strstr(recurrenceRule, "UNTIL=");
+    const char *untilindicator = strstr(recurrenceRule, "UNTIL=");
 
     if (untilindicator != NULL)
     {
-        char *untilStrStart = untilindicator + strlen("UNTIL=");
-        char *untilStrEnd = strchr(untilStrStart, ';');
+        const char *untilStrStart = untilindicator + strlen("UNTIL=");
+        const char *untilStrEnd = strchr(untilStrStart, ';');
         size_t untilStrLen = strlen(untilStrStart);
 
         if (untilStrEnd != NULL)
@@ -359,12 +362,12 @@ bool initialiseRecurringAllDayEvent(recurringEventInfo_t *toinit,
         return false; 
     }
     
-    char *intervalindicator = strstr(recurrenceRule, "INTERVAL=");
+    const char *intervalindicator = strstr(recurrenceRule, "INTERVAL=");
 
     if (intervalindicator != NULL)
     {
-        char *intervalStrStart = intervalindicator + strlen("INTERVAL=");
-        char *intervalStrEnd = strchr(intervalStrStart, ';');
+        const char *intervalStrStart = intervalindicator + strlen("INTERVAL=");
+        const char *intervalStrEnd = strchr(intervalStrStart, ';');
         size_t intervalStrLen = strlen(intervalStrStart);
 
         if (intervalStrEnd != NULL)
@@ -865,7 +868,11 @@ char *parsePartialDataForEvents(char *rawData, void *context)
         }
 
         //TODO: Pass description in
-        uint32_t matchresult = runEventMatchRules(pCal->EventRules, &entries[entriesNum],  "", recurRule);
+        uint32_t matchresult = INKYR_RESULT_NOOP;
+        if (pCal->EventRules)
+        {
+            matchresult = runEventMatchRules(pCal->EventRules, &entries[entriesNum],  "", recurRule);
+        }
 
         if (matchresult != INKYR_RESULT_DISCARD)
         {
@@ -962,4 +969,10 @@ uint64_t getRelevantEventCount()
 uint64_t getTotalEventCount()
 {
     return allEvents;
+}
+
+void resetEventStats()
+{
+    allRelevantEvents = 0;
+    allEvents = 0;
 }

@@ -43,5 +43,6 @@ char *parsePartialDataForEvents(char *rawData, void *context);
 
 uint64_t getRelevantEventCount(); //count of events relevant to calendar display
 uint64_t getTotalEventCount();  //count of all events parsed
+void resetEventStats();
 
 #endif

@@ -4,7 +4,9 @@
    Foundation, either version 3 of the License, or (at your option) any later 
    version.
 */
-#include "Arduino.h"
+#include <stdio.h>
+#include <stdarg.h>
+
 #include "LogSerial.h"
 
 #define LOGSERIAL_BUFSIZE 256
@@ -24,12 +26,11 @@ void LogSerial_LogImpl(int loglevel, const char* msg, ...)
 
         if (bytesout < LOGSERIAL_BUFSIZE-1)
         {
-            Serial.println(buff);
+            printf("%s\n", buff);
         }
         else
         {
-          Serial.print(buff);
-          Serial.println("...");
+          printf("%s...\n", buff);
         }
     }
 }

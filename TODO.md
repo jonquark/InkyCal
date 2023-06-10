@@ -15,6 +15,12 @@
 
 * (Optional?) removal of dups between calendars
 
+* should only match e.g. DTSTART at start of line.
+   CRLF whitespace is a continuation see "unfolding in rfc:
+   https://www.ietf.org/rfc/rfc5545.txt
+  (newlines are encloded by the two bytes: \n (literal slash, literal n))
+  Rewrite as line by line parser
+
 * Currently works with Inkplate Library 7.0.0 (easy to change version in "Library Manager" - investigate crashes with 8.0.0)
 
 * events like birthdays that don't "stop" - don't need more occurrences if already in future 

@@ -782,10 +782,18 @@ int32_t getUnfoldedLine(char **ppSrc, char *dest, size_t maxBytes)
                     destcurpos++;
                     src +=2;
                 }
+                else if (src[1] == '\\' || src[1] == ';' || src[1] == ',')
+                {
+                    //Backslashes seem to escaped to \\ in some ical
+                    //; and , seem to be escaped as well
+                    *destcurpos = src[1];
+                    destcurpos++;
+                    src+=2;
+                }
                 else
                 {
-                    //TODO: Is this right? are backslashs actually normally doubled?
-                    *destcurpos = '\\';
+                    //doesn't look like an escape sequence - treat as literal backslash
+                    *destcurpos = *src;
                     destcurpos++;
                     src++;
                 }

@@ -17,8 +17,6 @@
 
 * fix more events that didn't parse and do something with timezone info we now parse from event DTSTART (maybe use timezone info in file)
 
-* Todo test backslash in calendar
-
 * Document where event processing searches e.g. not in long summaries, locations
 
 * maybe: add a logProblem counter for LogSerial_Unusual() (counter to be shown in normal operation?)

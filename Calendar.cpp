@@ -10,6 +10,7 @@
 #include <stdint.h>
 #include <inttypes.h>
 #include <stdlib.h>
+#include <stdio.h>
 
 #include "InkyCalInternal.h"
 #include "LogSerial.h"
@@ -23,6 +24,12 @@ extern Calendar_t Calendars[];
 #define INKYC_ADDTIME_WEEKS  1
 #define INKYC_ADDTIME_MONTHS 2
 #define INKYC_ADDTIME_YEARS  3
+
+//Longest line (including continuation lines) in an ICAL calendar we are prepared to read
+#define INKYC_LINEBUF_MAX 500
+
+#define INKYC_LINERC_INCOMPLETE_TOO_LONG 1  //Can't get complete unfolded line, it's too long
+#define INKYC_LINERC_INCOMPLETE_SRC      2  //Can't get complete unfolded line - it's incomplete is the src buffer
 
 typedef struct recurringEventInfo
 {
@@ -39,6 +46,25 @@ typedef struct recurringEventInfo
     uint32_t currentStartYYYYMMDDInt;   
     uint32_t currentEndYYYYMMDDInt;  
 } recurringEventInfo_t;
+
+//Hold information about an where in the bufferevernt whilst we parse it
+#define INKYC_EVTPARSE_MAXBYTES_TIME 20
+#define INKYC_EVTPARSE_MAXBYTES_TIMEZONE  128
+#define INKYC_EVTPARSE_MAXBYTES_RECURRULE 128
+typedef struct eventParsingDetails
+{
+    char summary[INKY_ENTRY_MAXBYTES_NAME];
+    char location[INKY_ENTRY_MAXBYTES_LOCATION];
+    char timeStart[INKYC_EVTPARSE_MAXBYTES_TIME];
+    char timeEnd[INKYC_EVTPARSE_MAXBYTES_TIME];
+    char dateStart[INKYC_EVTPARSE_MAXBYTES_TIME];
+    char dateEnd[INKYC_EVTPARSE_MAXBYTES_TIME];
+    char timeZone[INKYC_EVTPARSE_MAXBYTES_TIMEZONE];
+    char recurRule[INKYC_EVTPARSE_MAXBYTES_RECURRULE];
+    char *foldedDescription;   //We don't unfold description - it can be long and we don't display it
+    size_t foldedDescriptionLen;
+} eventParsingDetails_t;
+
 
 uint64_t allEvents = 0;
 uint64_t allRelevantEvents = 0;
@@ -455,16 +481,20 @@ bool getNextOccurence(recurringEventInfo_t *recurInfo)
 // Format event times - converting to timezone offset
 // input: from - start time for event in YYYYMMDDTHHMMSSZ e.g. 19970901T130000Z
 // input: to   - end time for event in YYYYMMDDTHHMMSSZ e.g. 19970901T130000Z
-// output: dst - date string for event e.g. "14:00-16:00"
+// output: timestr - time string for event e.g. "14:00-16:00"
 // output: day - which calendar day event matches 0 - for first day
 // output: timestamp - event start in epoch time
+//
+// TODO: This function is very inefficient - it works out the string even for events 
+// way too far in future or past and works out which day on calendar by going a string compare
+// for each day (even for events in far future or past)
 // 
-void getToFrom(char *dst, char *from, char *to, int8_t *day, time_t *timeStamp)
+void getTimeString(char *timestr, char *from, char *to, int8_t *day, time_t *timeStamp)
 {
     struct tm ltm = {0};
     char temp[128];
 
-    LogSerial_Verbose2(">>> getToFrom (will cpy from addresses %ld and %ld)", from, to);
+    LogSerial_Verbose2(">>> getTimeString (will cpy from addresses %ld and %ld)", from, to);
 
     time_t from_epochtime = convertYYYYMMDDTHHMMSSZtoEpochTime(from);
 
@@ -472,18 +502,18 @@ void getToFrom(char *dst, char *from, char *to, int8_t *day, time_t *timeStamp)
     localtime_r(&from_epochtime, &from_tm_local);
     from_tm_local.tm_isdst = -1;
 
-    strncpy(dst, asctime(&from_tm_local) + 11, 5);
+    strncpy(timestr, asctime(&from_tm_local) + 11, 5);
 
-    dst[5] = '-';
+    timestr[5] = '-';
 
     time_t to_epochtime = convertYYYYMMDDTHHMMSSZtoEpochTime(to);
     
     struct tm to_tm_local;
     localtime_r(&to_epochtime, &to_tm_local);
     to_tm_local.tm_isdst = -1;
-    strncpy(dst + 6, asctime(&to_tm_local) + 11, 5);
+    strncpy(timestr + 6, asctime(&to_tm_local) + 11, 5);
 
-    dst[11] = 0;
+    timestr[11] = 0;
 
     *timeStamp = from_epochtime;
 
@@ -509,7 +539,7 @@ void getToFrom(char *dst, char *from, char *to, int8_t *day, time_t *timeStamp)
         *day = -1;    // event not in date range we are showing, don't display  
     }
   
-    LogSerial_Verbose2("<<< getFromTo Chosen day %" PRId8, *day);
+    LogSerial_Verbose2("<<< getTimeString Chosen day %" PRId8, *day);
 }
 
 //On entry to this function 
@@ -518,9 +548,9 @@ void getToFrom(char *dst, char *from, char *to, int8_t *day, time_t *timeStamp)
 //If the event is multiple days long, we will duplicate the event and point pEventIndex
 //to after the last used event
 //
-// dateStart and dateEnd are both expected to point to array of 8 chars in the form YYYYMMDD
+// TODO: doesn't check for event overlap with calendar before iterating through days
 //
-// uint32_t: number of days included in entrylist
+// returns uint32_t: number of days included in entrylist
 uint32_t parseAllDayEventInstance(entry_t *pEvents, int *pEventIndex, int maxEvents, int dateStartInt, int dateEndInt)
 {
     if (    dateStartInt < 20000101 || dateStartInt > 22000101 
@@ -538,7 +568,11 @@ uint32_t parseAllDayEventInstance(entry_t *pEvents, int *pEventIndex, int maxEve
     struct tm timeinfo;
     
     localtime_r(&nowepoch, &timeinfo);
-    timeinfo.tm_isdst = -1; //figure it out based on tz info    
+    timeinfo.tm_isdst = -1; //figure it out based on tz info
+
+    //TODO: check there is some overlap in date ranges before iterating through days
+    //if first day after eventend... can skip
+    //if last day before eventstart....can skip
 
     for (int daynum = 0; daynum < DaysRelevent; daynum++)
     {
@@ -617,7 +651,7 @@ uint32_t parseAllDayEvent(entry_t *pEvents, int *pEventIndex, int maxEvents, cha
     uint32_t relevantDays = 0;
     uint32_t eventInstances = 0;
 
-    if (recurRule != NULL)
+    if (recurRule != NULL && recurRule[0] != '\0')
     {
         recurringEventInfo_t recurInfo;
 
@@ -660,294 +694,500 @@ uint32_t parseAllDayEvent(entry_t *pEvents, int *pEventIndex, int maxEvents, cha
     if (relevantDays > 0)
     {
         LogSerial_Info("parseAllDayEvent: Event %s (recurred %" PRIu32 " times based on start %.*s rule %s) - relevant %d days",
-                      pEvents[*pEventIndex].name, eventInstances, 8, dateStart, (recurRule != NULL ? recurRule : "unset"), relevantDays);
+                      pEvents[*pEventIndex].name, eventInstances, 8, dateStart, (recurRule != NULL && recurRule[0] != '\0'? recurRule : "unset"), relevantDays);
     }
     else
     {
         LogSerial_Verbose1("parseAllDayEvent: Event %s (recurred %" PRIu32 " times based on start %.*s rule %s) - relevant %d days",
-                      pEvents[*pEventIndex].name, eventInstances, 8, dateStart, (recurRule != NULL ? recurRule : "unset"), relevantDays);
+                      pEvents[*pEventIndex].name, eventInstances, 8, dateStart, (recurRule != NULL && recurRule[0] != '\0'? recurRule : "unset"), relevantDays);
     }
 
     return relevantDays;
 }
 
+int32_t getUnfoldedLine(char **ppSrc, char *dest, size_t maxBytes)
+{
+    char *src = *ppSrc;
+    char *destcurpos = dest;
+    
+    char *destendline = NULL;        // \__ If we find we can't include current line, we'll
+    char *srcendline  = NULL;  // /   terminate dest at this point (if set)
+
+    size_t maxNonNullBytes = maxBytes - 1;
+
+    int32_t linerc = 0;
+    bool gotCompleteLine = false;
+
+    LogSerial_Verbose5("On entry gUL was given %p\n", src);
+
+
+    while (*src != '\0' && linerc == 0 && !gotCompleteLine)
+    {
+        if ((destcurpos - dest) >= maxNonNullBytes)
+        {
+            linerc = INKYC_LINERC_INCOMPLETE_TOO_LONG;
+            break;
+        }
+        switch(src[0])
+        {
+            case '\\':
+                //See if next is n if so put \n in dest and skip both in src
+                if(src[1] == 'n')
+                {
+                    *destcurpos = '\n';
+                    destcurpos++;
+                    src +=2;
+                }
+                else
+                {
+                    //TODO: Is this right? are backslashs actually normally doubled?
+                    *destcurpos = '\\';
+                    destcurpos++;
+                    src++;
+                }
+                break;
+
+            case '\r':
+                //deliberately skip - it's either part of lineending (which we are removing)
+                // or a weird character we want to omit from diplayed anyway
+                src++;
+                break;
+            
+            case '\n':
+                //Line ending
+                destendline = destcurpos;
+                srcendline = &(src[1]); //if we rewind to this line end - start src at being of next line
+
+                if (src[1] == '\0')
+                {
+                    //D'oh - can't tell whether it would be a continuation line - don't have next char
+                   linerc = INKYC_LINERC_INCOMPLETE_SRC;
+                   break;
+                }
+                else if (src[1] == ' ' || src[1] == '\t')
+                {
+                    //Continuation line, skip over in src and keep scanning
+                    src += 2;
+                }
+                else
+                {
+                    //Found the end of current line
+                    gotCompleteLine = true;
+
+                    *destcurpos = '\0'; //Ensure output buffer null-terminated
+                    *ppSrc = &(src[1]); //Tell caller where next line starts
+                    break;
+                }
+                break;
+            
+            default:
+                //By default copy src -> dest
+                *destcurpos = *src;
+                destcurpos++;
+                src++;
+                break;
+        }
+    }
+
+    if (!gotCompleteLine)
+    {
+        if (linerc == INKYC_LINERC_INCOMPLETE_TOO_LONG)
+        {
+            if (destendline != NULL && srcendline != NULL)
+            {
+                //We'll rewind scan to last \n as a sensible place to leave the scan and return partial line
+                *destendline = '\0';
+                *ppSrc = srcendline;
+            }
+            else
+            {
+               //Line in src too long to ever scan - move source past it and return partial line 
+
+                while(*src != '\0' && *src != '\n')
+                {
+                    src++;
+                }
+                if(*src == '\n')
+                {
+                    *ppSrc =  &(src[1]); //Start scan at begining of next line
+                    *destcurpos = '\0'; //Ensure output buffer null-terminated
+                }
+                else
+                {
+                    //Can't find a line ending to continue scan from... give up and undo scan entirely
+                    linerc = INKYC_LINERC_INCOMPLETE_SRC; 
+                    *dest = '\0';  //Set out buffer to be empty
+                }
+            }
+        }
+        else
+        {
+            //Return empty buffer and don't update ppSrc
+            *dest = '\0'; 
+            linerc = INKYC_LINERC_INCOMPLETE_SRC;
+        }
+    }
+
+    LogSerial_Verbose5("On exit gUL was sending  %p, %d dest: %s\n", *ppSrc, linerc, dest);
+
+    return linerc;
+}
+
+//returns 0 if found all the details for event
+//returns INKYC_LINERC_INCOMPLETE_SRC if event details are not complete
+int32_t findNextEventDetails(char **ppUnparsedData, eventParsingDetails_t *pEventDetails)
+{
+    char *currPos = *ppUnparsedData;
+    bool inEvent       = false;
+    bool foundEventEnd = false;
+    int32_t rc = 0;
+
+    while (!foundEventEnd && rc == 0)
+    {
+        bool movedToNextLineYet = false;
+
+        if(!inEvent)
+        {
+            if(strncmp(currPos, "BEGIN:VEVENT", strlen("BEGIN:VEVENT")) == 0)
+            {
+                inEvent = true;
+            }
+        }
+        else
+        {
+            //Unfold the current line as per rfc5545
+            char linebuf[INKYC_LINEBUF_MAX];
+
+            char *srcLineStartPos = currPos;
+            int32_t linerc = getUnfoldedLine(&currPos, linebuf, INKYC_LINEBUF_MAX);
+
+            if (linerc == INKYC_LINERC_INCOMPLETE_SRC)
+            {
+                //giveup the scan
+                rc = INKYC_LINERC_INCOMPLETE_SRC;
+                break;
+            }
+            else
+            {
+                //Unfolding the line will have moved us to the next one
+                movedToNextLineYet = true;
+            }
+
+            bool usefulField = false;
+            switch(linebuf[0])
+            {
+                case ' ':   //Deliberate fall through to other whitespace case
+                case '\t':
+                    //If we found the start of a description but not the end yet...
+                    if (   pEventDetails->foldedDescription != NULL 
+                        && pEventDetails->foldedDescriptionLen == 0)
+                    {
+                        usefulField = true;
+
+                        //If we finally found the end of the description:
+                        if (linerc != INKYC_LINERC_INCOMPLETE_TOO_LONG)
+                        {
+                            pEventDetails->foldedDescriptionLen = currPos - pEventDetails->foldedDescription;
+                        }
+                    }
+                    break;
+
+                case 'D':
+                    //DESCRIPTION or DTSTART or DTEND
+
+                    if (strncmp(linebuf,"DESCRIPTION:", strlen("DESCRIPTION:")) == 0)
+                    {
+                        usefulField = true;
+                        pEventDetails->foldedDescription = srcLineStartPos;
+                        
+                        if (linerc != INKYC_LINERC_INCOMPLETE_TOO_LONG)
+                        {
+                            pEventDetails->foldedDescriptionLen = currPos - pEventDetails->foldedDescription;
+                        }
+                    }
+                    else if(strncmp(linebuf,"DTSTART", strlen("DTSTART")) == 0)
+                    {
+                        usefulField = true;
+                        char *dtStart = linebuf + strlen("DTSTART");
+
+                        if (dtStart[0] == ':')
+                        {
+                            //Just a plain time - phew - timeStart is after colon
+                            snprintf(pEventDetails->timeStart, INKYC_EVTPARSE_MAXBYTES_TIME, dtStart + 1);
+                        }
+                        else
+                        {
+                            char *dtparamsEnd = strchr(dtStart, ':');
+                            size_t dtparamsLen = dtparamsEnd - dtStart;
+
+                            if (dtparamsEnd)
+                            {
+                                //Check for TZINFO of the form:
+                                //DTSTART;TZID=Europe/London:20181127T193000
+                                char *tzidStartSearch = (char *)memmem(dtStart, dtparamsLen,
+                                                                    "TZID=", strlen("TZID="));
+
+                                if (tzidStartSearch)
+                                {
+                                    snprintf(pEventDetails->timeZone, INKYC_EVTPARSE_MAXBYTES_TIMEZONE, tzidStartSearch + strlen("TZID="));
+                                    snprintf(pEventDetails->timeStart, INKYC_EVTPARSE_MAXBYTES_TIME, dtparamsEnd + 1); //+1 to go past ':' dtParamsEnd points at
+                                }
+                                else
+                                {
+                                    //dates are of the form: DTSTART;VALUE=DATE:
+                                    char *dateStartSearch = (char *)memmem(dtStart, dtparamsLen,
+                                                                    "VALUE=DATE", strlen("VALUE=DATE"));
+                    
+                                    if (dateStartSearch)
+                                    {
+                                        snprintf(pEventDetails->dateStart, INKYC_EVTPARSE_MAXBYTES_TIME, dtparamsEnd + 1); //+1 to go past ':' dtParamsEnd points at
+                                    }
+                                }
+                            }
+                        }
+                    }
+                    else if(strncmp(linebuf,"DTEND", strlen("DTEND")) == 0)
+                    {
+                        usefulField = true;
+                        char *dtEnd = linebuf + strlen("DTEND");
+
+                        if (dtEnd[0] == ':')
+                        {
+                            //Just a plain time - phew - timeEnd is after colon
+                            snprintf(pEventDetails->timeEnd, INKYC_EVTPARSE_MAXBYTES_TIME, dtEnd + 1);
+                        }
+                        else
+                        {
+                            char *dtparamsEnd = strchr(dtEnd, ':');
+                            size_t dtparamsLen = dtparamsEnd - dtEnd;
+
+                            if (dtparamsEnd)
+                            {
+                                //Check for TZINFO of the form:
+                                //DTSTART;TZID=Europe/London:20181127T193000
+                                char *tzidSearch = (char *)memmem(dtEnd, dtparamsLen,
+                                                                    "TZID=", strlen("TZID="));
+
+                                if (tzidSearch)
+                                {
+                                    //We don't do anything with a timezone in an end time...
+                                    snprintf(pEventDetails->timeEnd, INKYC_EVTPARSE_MAXBYTES_TIME, dtparamsEnd + 1); //+1 to go past ':' dtParamsEnd points at
+                                }
+                                else
+                                {
+                                    //dates are of the form: DTSTART;VALUE=DATE:
+                                    char *dateEndSearch = (char *)memmem(dtEnd, dtparamsLen,
+                                                                    "VALUE=DATE", strlen("VALUE=DATE"));
+                    
+                                    if (dateEndSearch)
+                                    {
+                                        snprintf(pEventDetails->dateEnd, INKYC_EVTPARSE_MAXBYTES_TIME, dtparamsEnd + 1); //+1 to go past ':' dtParamsEnd points at
+                                    }
+                                }
+                            }
+                        }
+                    }
+                    break;
+
+                case 'E':
+                    //END:VEVENT
+                    if (strncmp(linebuf,"END:VEVENT", strlen("END:VEVENT")) == 0)
+                    {
+                        usefulField = true;
+                        foundEventEnd = true; 
+                        break;
+                    }
+                    break;
+                
+                case 'L':
+                    //LOCATION
+                    if (strncmp(linebuf,"LOCATION:", strlen("LOCATION:")) == 0)
+                    {
+                        usefulField = true;
+                        snprintf(pEventDetails->location, INKY_ENTRY_MAXBYTES_LOCATION,
+                                 "%s",linebuf+strlen("LOCATION:"));
+                    }
+                    break;
+                
+                case 'R':
+                    //RRULE
+                    if (strncmp(linebuf,"RRULE:", strlen("RRULE:")) == 0)
+                    {
+                        usefulField = true;
+                        snprintf(pEventDetails->recurRule, INKYC_EVTPARSE_MAXBYTES_RECURRULE,
+                                 "%s",linebuf+strlen("RRULE:"));
+                    }
+                
+                case 'S':
+                    //SUMMARY
+                    if (strncmp(linebuf,"SUMMARY:", strlen("SUMMARY:")) == 0)
+                    {
+                        usefulField = true;
+                        snprintf(pEventDetails->summary, INKY_ENTRY_MAXBYTES_NAME,
+                                 "%s",linebuf+strlen("SUMMARY:"));
+                    }
+                    break;
+                
+                default:
+                    //Lots of fields we don't use
+                    break;
+
+            }
+
+            if (!usefulField)
+            {
+                LogSerial_Verbose4("SkippingDuringParse: %s", linebuf);
+            }
+        }
+
+        //Move to next line - if we haven't already
+        if (!movedToNextLineYet)
+        {
+            currPos = strchr(currPos, '\n');
+
+            if (!currPos)
+            {
+                //giveup the scan - haven't got a complete line
+                rc = INKYC_LINERC_INCOMPLETE_SRC;
+            }
+            else
+            {
+               currPos++; //move past '\n'
+            }
+        }
+    }
+
+    //If we found a description but not the end of the dscription we are not complete
+    if (rc == 0)
+    {
+       if((pEventDetails->foldedDescriptionLen == 0) != (pEventDetails->foldedDescription == NULL))
+       {
+           //We must have a bug as we shouldn't have found event end etc without first see description end!
+           LogSerial_FatalError("We thought we had finished parse of event but hadn't found descripton end: %s",  (pEventDetails->summary ? pEventDetails->summary : "No summary"));
+           logProblem(INKY_SEVERITY_FATAL);        
+           rc = INKYC_LINERC_INCOMPLETE_SRC;
+       }
+    }
+
+    if (rc == 0)
+    {
+        *ppUnparsedData = currPos;
+    }
+    return rc;
+}
 
 char *parsePartialDataForEvents(char *rawData, void *context)
 {
     CalendarParsingContext_t *calContext = (CalendarParsingContext_t *)context;  
     Calendar_t *pCal = calContext->pCal;
 
-    long scanpos = 0;
-    long bytesAvail = strlen(rawData);
 
     uint64_t batchEvents = 0;
     uint64_t batchEventsRelevant = 0;
 
     bool eventRelevant = false;
     
-    char *unparseddata = rawData;    
-
-    // Search raw data for events
-    while (scanpos < bytesAvail)
-    { 
-        eventRelevant = false;
-
-        // Find next event start and end
-        char *startSearch = strstr(rawData + scanpos, "BEGIN:VEVENT");
-        char *start;
+    char *unparseddata = rawData; 
     
-        if (startSearch)
+    int evtrc = 0;
+    
+    eventParsingDetails_t eventDetails;
+    
+    // Search raw data for events
+    while (evtrc == 0)
+    { 
+        eventParsingDetails_t eventDetails = {0};
+
+        evtrc = findNextEventDetails(&unparseddata, &eventDetails);
+
+        if (evtrc == 0)
         {
-            LogSerial_Verbose1("Found Event Start at %ld", startSearch - rawData);
-            start = startSearch + strlen("BEGIN:VEVENT");
-        }
-        else
-        {
-            LogSerial_Verbose2("Found no event in last %ld bytes", bytesAvail - scanpos);
-            goto mod_exit;          
-        }
-
-
-        char *end = strstr(start, "END:VEVENT");
-
-        if (end)
-        {
-            LogSerial_Verbose2("Found Event End at pos %d (absolute address %d)", end - rawData, end);
-            unparseddata = end;
-        }
-        else
-        {
-            LogSerial_Verbose1("Found event without end (position %ld) - won't parse %ld bytes", start-rawData, bytesAvail-(start-rawData));
-            LogSerial_Verbose2("Unparsed event fragment:\n%s", start);
-            goto mod_exit;
-        }
-
-        scanpos = end - rawData;
-        size_t eventLength = end - start;
-
-        // Find all relevant event data
-        char *summarySearch = (char *)memmem(start, eventLength, "SUMMARY:", strlen("SUMMARY:"));
-        char *locationSearch = (char *)memmem(start, eventLength, "LOCATION:", strlen("LOCATION:"));
-        char *dtStartSearch = (char *)memmem(start, eventLength, "DTSTART", strlen("DTSTART"));
-        char *dtEndSearch = (char *)memmem(start, eventLength, "DTEND", strlen("DTEND"));
-        char *recurRuleSearch = (char *)memmem(start, eventLength, "RRULE:", strlen("RRULE:"));
-
-        char *summary = NULL;
-        char *location = NULL;
-        char *timeStart = NULL;
-        char *timeEnd = NULL;
-        char *dateStart = NULL;
-        char *dateEnd = NULL;
-        char *recurRule = NULL;
-        char *timeZone = NULL;
-        size_t timeZoneLength = 0;
-
-        if (summarySearch)
-        {
-            summary = summarySearch + strlen("SUMMARY:");
-        }
-        if (locationSearch)
-        {
-            location = locationSearch + strlen("LOCATION:");
-        }
-        if (dtStartSearch)
-        {
-            char *dtStart = dtStartSearch + strlen("DTSTART");
-
-            if (dtStart[0] == ':')
-            {
-                //Just a plain time - phew - timeStart is after colon
-                timeStart = dtStart + 1;
-            }
-            else
-            {
-                char *dtparamsEnd = strchr(dtStart, ':');
-                size_t dtparamsLen = dtparamsEnd - dtStart;
-
-                if (dtparamsEnd && dtparamsEnd < end)
-                {
-                    //Check for TZINFO of the form:
-                    //DTSTART;TZID=Europe/London:20181127T193000
-                    char *tzidStartSearch = (char *)memmem(dtStart, dtparamsLen,
-                                                           "TZID=", strlen("TZID="));
-
-                    if (tzidStartSearch)
-                    {
-                        timeZone = tzidStartSearch + strlen("TZID=");
-                        timeZoneLength = dtparamsEnd - timeZone;
-                        timeStart =  dtparamsEnd + 1; //+1 to go past ':' we are pointing at
-                    }
-                    else
-                    {
-                        //dates are of the form: DTSTART;VALUE=DATE:
-                        char *dateStartSearch = (char *)memmem(dtStart, dtparamsLen,
-                                                          "VALUE=DATE", strlen("VALUE=DATE"));
-          
-                        if (dateStartSearch)
-                        {
-                            dateStart = dtparamsEnd + 1; //+1 to go past ':' we are pointing at
-                        }
-                    }
-                }
-            }
-        }
-
-        if (dtEndSearch)
-        {
-            char *dtEnd = dtEndSearch + strlen("DTEND");
-
-            if (dtEnd[0] == ':')
-            {
-                //Just a plain time - phew - timeStart is after colon
-                timeEnd = dtEnd + 1;
-            }
-            else
-            {
-                char *dtparamsEnd = strchr(dtEnd, ':');
-                size_t dtparamsLen = dtparamsEnd - dtEnd;
-
-                if (dtparamsEnd && dtparamsEnd < end)
-                {
-                    //Check for TZINFO of the form:
-                    //DTSTART;TZID=Europe/London:20181127T193000
-                    char *tzidSearch = (char *)memmem(dtEnd, dtparamsLen,
-                                                           "TZID=", strlen("TZID="));
-
-                    if (tzidSearch)
-                    {
-                        //We don't do anything with a timezone in an end time... 
-                        timeEnd =  dtparamsEnd + 1; //+1 to go past ':' we are pointing at
-                    }
-                    else
-                    {
-                        //dates are of the form: DTSTART;VALUE=DATE:
-                        char *dateEndSearch = (char *)memmem(dtEnd, dtparamsLen,
-                                                          "VALUE=DATE", strlen("VALUE=DATE"));
-          
-                        if (dateEndSearch)
-                        {
-                            dateEnd = dtparamsEnd + 1; //+1 to go past ':' we are pointing at
-                        }
-                    }     
-                }
-            }
-        }
-
-        if (recurRuleSearch)
-        {
-            recurRule = recurRuleSearch + strlen("RRULE:");
-        }
-
-        LogSerial_Verbose2("Finished finding fields for event %d (so far: relevant % " PRIu64 ", total %" PRIu64 ")",
+            LogSerial_Verbose2("Finished finding fields for event %d (so far: relevant % " PRIu64 ", total %" PRIu64 ")",
                                                  entriesNum, allRelevantEvents, allEvents);
 
-        entry_SetColour(&entries[entriesNum], pCal->eventColour);
-        entries[entriesNum].sortTieBreak =  pCal->sortTieBreak;
+            entry_SetColour(&entries[entriesNum], pCal->eventColour);
+            entries[entriesNum].sortTieBreak =  pCal->sortTieBreak;
         
-        if (summary)
-        {
-            LogSerial_Verbose1("Summary: %s", entries[entriesNum].name);
-            strncpy(entries[entriesNum].name, summary, strchr(summary, '\n') - summary);
-            entries[entriesNum].name[strchr(summary, '\n') - summary] = 0;
-        }
-        else
-        {
-            LogSerial_Unusual("Event with no summary: %.*s", eventLength, start);
-            entries[entriesNum].name[0] = '\0';
-        }
-
-        if (location)
-        {
-            LogSerial_Verbose1("Location: %s", entries[entriesNum].location);
-            strncpy(entries[entriesNum].location, location, strchr(location, '\n') - location);
-            entries[entriesNum].location[strchr(location, '\n') - location] = 0;
-        }
-        else
-        {
-            entries[entriesNum].location[0] = '\0';
-        }
-
-        //TODO: Pass description in
-        uint32_t matchresult = INKYR_RESULT_NOOP;
-        if (pCal->EventRules)
-        {
-            matchresult = runEventMatchRules(pCal->EventRules, &entries[entriesNum],  "", recurRule);
-        }
-
-        if (matchresult != INKYR_RESULT_DISCARD)
-        {
-            if (timeStart && timeEnd)
+            if (eventDetails.summary[0] != '\0')
             {
-                getToFrom(entries[entriesNum].time, timeStart, timeEnd, &entries[entriesNum].day,
-                          &entries[entriesNum].timeStamp);
-
-                LogSerial_Verbose1("Determined day to be: %" PRIu8, entries[entriesNum].day);
-            
-                if (entries[entriesNum].day >= 0)
-                {
-                    eventRelevant = true;
-                    ++entriesNum;
-                }
+                LogSerial_Verbose1("Summary: %s", eventDetails.summary);
+                strcpy(entries[entriesNum].name, eventDetails.summary);
             }
             else
             {
-                if (dateStart && dateEnd)
-                {   
-                    //Assume date in format YYYYMMDD
-                    if (strnlen(dateStart, 8) >= 8 && strnlen(dateEnd, 8) >= 8)
-                    {
-                        //Null terminate recur rule if there is one
-                        char recurRuleBuf[65];
-                        if (recurRule)
-                        {
-                            size_t rulelen = strchr(recurRule, '\n') - recurRule;
+                LogSerial_Unusual("Event with no summary. Description: %.*s", eventDetails.foldedDescriptionLen,  eventDetails.foldedDescription);
+                entries[entriesNum].name[0] = '\0';
+            }
 
-                            if (rulelen <= 64 && rulelen > 0)
-                            {
-                                strncpy(recurRuleBuf, recurRule, rulelen);
-                                recurRuleBuf[rulelen] = '\0';
-                                recurRule = recurRuleBuf;
-                            }
-                            else
-                            {
-                                LogSerial_Error("Recur Rule - too long: %u", rulelen);
-                                logProblem(INKY_SEVERITY_ERROR);
-                                recurRule = NULL;
-                            }
-                        }
-                        else
-                        {
-                            recurRule = NULL;
-                        }
+            if (eventDetails.location[0] != '\0')
+            {
+                LogSerial_Verbose1("Location: %s", eventDetails.location);
+                strcpy(entries[entriesNum].location, eventDetails.location);
+            }
+            else
+            {
+                entries[entriesNum].location[0] = '\0';
+            }
 
-                        if(parseAllDayEvent(entries, &entriesNum, MAX_ENTRIES, dateStart, dateEnd, recurRule) > 0)
-                        {
-                            eventRelevant = true;
-                        }
-                    }
-                    else
+            //TODO: Pass description in (need to change signature to pass in length)
+            uint32_t matchresult = INKYR_RESULT_NOOP;
+            if (pCal->EventRules)
+            {
+                matchresult = runEventMatchRules(pCal->EventRules, &entries[entriesNum],  "", eventDetails.recurRule);
+            }
+
+            if (matchresult != INKYR_RESULT_DISCARD)
+            {
+                if (eventDetails.timeStart[0] != '\0' && eventDetails.timeEnd[0] != '\0')
+                {
+                    getTimeString(entries[entriesNum].time,
+                                  eventDetails.timeStart, eventDetails.timeEnd, 
+                                  &entries[entriesNum].day, &entries[entriesNum].timeStamp);
+
+                    LogSerial_Verbose1("Determined day to be: %" PRIu8, entries[entriesNum].day);
+            
+                    if (entries[entriesNum].day >= 0)
                     {
-                        LogSerial_Unusual("Event with no valid date info!");
-                        LogSerial_Unusual("Event with no valid date info - event length %ld", eventLength);
-                        LogSerial_Unusual("Event with no valid date info: %.*s", eventLength, start);
+                        eventRelevant = true;
+                        ++entriesNum;
                     }
                 }
                 else
                 {
-                    LogSerial_Unusual("Event with no valid time info!");
-                    LogSerial_Unusual("Event with no valid time info - event length %ld", eventLength);
-                    LogSerial_Unusual("Event with no valid time info: %.*s", eventLength, start);
+                    if (eventDetails.dateStart[0] != '\0' && eventDetails.dateEnd[0] != '\0')
+                    {   
+                        //Assume date in format YYYYMMDD
+                        if (strnlen(eventDetails.dateStart, 8) >= 8 && strnlen(eventDetails.dateEnd, 8) >= 8)
+                        {
+                            if(parseAllDayEvent(entries, &entriesNum, MAX_ENTRIES, 
+                                                eventDetails.dateStart, eventDetails.dateEnd, 
+                                                eventDetails.recurRule) > 0)
+                            {
+                                eventRelevant = true;
+                            }
+                        }
+                        else
+                        {
+                            LogSerial_Unusual("Event with no valid date info! Event Summary: %s TimeStart %s TimeEnd %s DateStart: %s DateEnd %s",
+                                                  eventDetails.summary, eventDetails.timeStart, eventDetails.timeEnd, eventDetails.dateStart, eventDetails.dateEnd);
+                              
+                        }
+                    }
+                    else
+                    {
+                            LogSerial_Unusual("Event with no valid date info! Event Summary: %s TimeStart %s TimeEnd %s DateStart: %s DateEnd %s",
+                                                  eventDetails.summary, eventDetails.timeStart, eventDetails.timeEnd, eventDetails.dateStart, eventDetails.dateEnd);
+                    }
                 }
             }
 
             if (eventRelevant)
             {
-              ++batchEventsRelevant;
+                ++batchEventsRelevant;
             }
             ++batchEvents;
         }
     }
-mod_exit:
     calContext->calEvents += batchEvents;
     calContext->calRelevantEvents += batchEventsRelevant;
 

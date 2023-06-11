@@ -12,11 +12,14 @@
 #include <time.h>
 
 // Struct for storing calender event info
+#define INKY_ENTRY_MAXBYTES_NAME     128
+#define INKY_ENTRY_MAXBYTES_TIME     128
+#define INKY_ENTRY_MAXBYTES_LOCATION 128
 typedef struct entry
 {
-    char name[128];
-    char time[128];
-    char location[128];
+    char name[INKY_ENTRY_MAXBYTES_NAME];
+    char time[INKY_ENTRY_MAXBYTES_TIME];
+    char location[INKY_ENTRY_MAXBYTES_LOCATION];
     time_t timeStamp;
     int8_t day = -1;
     int8_t sortTieBreak; //higher number, higher up display

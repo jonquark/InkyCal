@@ -30,3 +30,9 @@
 * add a logProblem counter for LogSerial_Unusual() (counter to be shown in normal operation?)
 
 * no length checking of summary/location when putting into structure
+
+* getTimeString very inefficient - see notes at top of function
+
+* parseAllDayEventInstance inefficient - see function notes
+
+* Todo test backslash in calendar

@@ -15,14 +15,10 @@
 
 * Currently works with Inkplate Library 7.0.0 (easy to change version in "Library Manager" - investigate crashes with 8.0.0)
 
-* events like birthdays that don't "stop" - don't need more occurrences if already in future 
-
-* fix more events that didn't parse and do something with timezone info we now parse
-
-* add a logProblem counter for LogSerial_Unusual() (counter to be shown in normal operation?)
-
-* getTimeString very inefficient - see notes at top of function
-
-* parseAllDayEventInstance inefficient - see function notes
+* fix more events that didn't parse and do something with timezone info we now parse from event DTSTART (maybe use timezone info in file)
 
 * Todo test backslash in calendar
+
+* Document where event processing searches e.g. not in long summaries, locations
+
+* maybe: add a logProblem counter for LogSerial_Unusual() (counter to be shown in normal operation?)

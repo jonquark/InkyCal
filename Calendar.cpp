@@ -247,6 +247,24 @@ int convertEpochTimeToYYYYMMDD(time_t inputTime)
     return (int)day;
 }
 
+static int getYYYYMMDDInt4FirstDay()
+{
+    return convertEpochTimeToYYYYMMDD(CalendarStart);
+}
+
+static int getYYYYMMDDInt4LastDay()
+{
+    struct tm timeinfo;
+    localtime_r(&CalendarStart, &timeinfo);
+ 
+    timeinfo.tm_isdst = -1; //dst active is based on tz info
+    timeinfo.tm_mday += DaysRelevent;       
+    
+    time_t lastdayepochtime = mktime(&timeinfo);
+
+    return convertEpochTimeToYYYYMMDD(lastdayepochtime);
+}
+
 bool initialiseRecurringAllDayEvent(recurringEventInfo_t *toinit,
                                     const char *recurrenceRule,
                                     const char *dayStartYYYYMMDD,
@@ -380,14 +398,7 @@ bool initialiseRecurringAllDayEvent(recurringEventInfo_t *toinit,
         }
         toinit->repeatUntil = untilEpoch;
     }
-
-    if(toinit->repeatUntil == 0 && toinit->instancesRemaining <= 0 )
-    {
-        LogSerial_FatalError("Currently can only parse recurring event with a fixed COUNT=  or UNTIL= but got recur rule: %s",  recurrenceRule);
-        logProblem(INKY_SEVERITY_FATAL);
-        return false; 
-    }
-    
+   
     const char *intervalindicator = strstr(recurrenceRule, "INTERVAL=");
 
     if (intervalindicator != NULL)
@@ -423,8 +434,7 @@ bool initialiseRecurringAllDayEvent(recurringEventInfo_t *toinit,
     }
     else
     {
-        LogSerial_Error("Currently expect recur rules to contain INTERVAL= but got recur rule: %s (defaulting to 1)",  recurrenceRule);
-        logProblem(INKY_SEVERITY_ERROR);
+        LogSerial_Verbose4("recurrence rule did not contain INTERVAL= (got recur rule: %s) therefore defaulting to 1",  recurrenceRule);
         toinit->recurrenceInterval = 1;
     }
 
@@ -481,13 +491,10 @@ bool getNextOccurence(recurringEventInfo_t *recurInfo)
 // Format event times - converting to timezone offset
 // input: from - start time for event in YYYYMMDDTHHMMSSZ e.g. 19970901T130000Z
 // input: to   - end time for event in YYYYMMDDTHHMMSSZ e.g. 19970901T130000Z
-// output: timestr - time string for event e.g. "14:00-16:00"
-// output: day - which calendar day event matches 0 - for first day
-// output: timestamp - event start in epoch time
+// output: timestr - time string for event e.g. "14:00-16:00"  (if day is relevant)
+// output: day - which calendar day event matches 0 - for first day -1 for not relevant
+// output: timestamp - event start in epoch time (if day is relevant)
 //
-// TODO: This function is very inefficient - it works out the string even for events 
-// way too far in future or past and works out which day on calendar by going a string compare
-// for each day (even for events in far future or past)
 // 
 void getTimeString(char *timestr, char *from, char *to, int8_t *day, time_t *timeStamp)
 {
@@ -496,8 +503,28 @@ void getTimeString(char *timestr, char *from, char *to, int8_t *day, time_t *tim
 
     LogSerial_Verbose2(">>> getTimeString (will cpy from addresses %ld and %ld)", from, to);
 
-    time_t from_epochtime = convertYYYYMMDDTHHMMSSZtoEpochTime(from);
+    //if first day after eventend... can skip
+    time_t to_epochtime = convertYYYYMMDDTHHMMSSZtoEpochTime(to);
+    int toDateInt = convertEpochTimeToYYYYMMDD(to_epochtime);
+    if (getYYYYMMDDInt4FirstDay() > toDateInt)
+    {
+        LogSerial_Verbose4("Skipping getting timestring as end of event is only %d", toDateInt);
+        *day = -1;    // event not in date range we are showing, don't display  
+        return;
+    }
 
+    //if last day before eventstart....can skip
+    time_t from_epochtime = convertYYYYMMDDTHHMMSSZtoEpochTime(from);
+    int fromDateInt = convertEpochTimeToYYYYMMDD(from_epochtime);
+    if (getYYYYMMDDInt4LastDay() < fromDateInt)
+    {
+        LogSerial_Verbose4("Skipping getting timestring as start of event is (calendar future): %d", fromDateInt);
+        *day = -1;    // event not in date range we are showing, don't display  
+        return;
+    }
+
+
+    //If we got here - this looks like a relevant event
     struct tm from_tm_local;
     localtime_r(&from_epochtime, &from_tm_local);
     from_tm_local.tm_isdst = -1;
@@ -506,7 +533,6 @@ void getTimeString(char *timestr, char *from, char *to, int8_t *day, time_t *tim
 
     timestr[5] = '-';
 
-    time_t to_epochtime = convertYYYYMMDDTHHMMSSZtoEpochTime(to);
     
     struct tm to_tm_local;
     localtime_r(&to_epochtime, &to_tm_local);
@@ -538,7 +564,6 @@ void getTimeString(char *timestr, char *from, char *to, int8_t *day, time_t *tim
     {
         *day = -1;    // event not in date range we are showing, don't display  
     }
-  
     LogSerial_Verbose2("<<< getTimeString Chosen day %" PRId8, *day);
 }
 
@@ -548,8 +573,7 @@ void getTimeString(char *timestr, char *from, char *to, int8_t *day, time_t *tim
 //If the event is multiple days long, we will duplicate the event and point pEventIndex
 //to after the last used event
 //
-// TODO: doesn't check for event overlap with calendar before iterating through days
-//
+
 // returns uint32_t: number of days included in entrylist
 uint32_t parseAllDayEventInstance(entry_t *pEvents, int *pEventIndex, int maxEvents, int dateStartInt, int dateEndInt)
 {
@@ -562,17 +586,24 @@ uint32_t parseAllDayEventInstance(entry_t *pEvents, int *pEventIndex, int maxEve
         return 0;
     }
 
-    int relevantDays = 0;
+    //if first day after eventend... can skip
+    if (getYYYYMMDDInt4FirstDay() > dateEndInt)
+    {
+        LogSerial_Verbose4("Skipping instance as end of instamce is only %d", dateEndInt);
+        return 0;
+    }
+    //if last day before eventstart....can skip
+    if (getYYYYMMDDInt4LastDay() < dateStartInt)
+    {
+        LogSerial_Verbose4("Skipping instance as start of instance is (calendar future): %d", dateEndInt);
+        return 0;
+    }
 
-    time_t nowepoch = CalendarStart;
+    int relevantDays = 0;
     struct tm timeinfo;
     
-    localtime_r(&nowepoch, &timeinfo);
+    localtime_r(&CalendarStart, &timeinfo);
     timeinfo.tm_isdst = -1; //figure it out based on tz info
-
-    //TODO: check there is some overlap in date ranges before iterating through days
-    //if first day after eventend... can skip
-    //if last day before eventstart....can skip
 
     for (int daynum = 0; daynum < DaysRelevent; daynum++)
     {
@@ -664,14 +695,27 @@ uint32_t parseAllDayEvent(entry_t *pEvents, int *pEventIndex, int maxEvents, cha
             logProblem(INKY_SEVERITY_ERROR);
             return 0;
         }
-
+        
+        int lastday = getYYYYMMDDInt4LastDay();
+    
         while( getNextOccurence(&recurInfo) )
         {
-            eventInstances++;
-
-            relevantDays += parseAllDayEventInstance(pEvents, pEventIndex, maxEvents, 
-                                              recurInfo.currentStartYYYYMMDDInt,
-                                              recurInfo.currentEndYYYYMMDDInt);
+            if (recurInfo.currentStartYYYYMMDDInt <= lastday)
+            {
+                eventInstances++;
+            
+                relevantDays += parseAllDayEventInstance(pEvents, pEventIndex, maxEvents, 
+                                                      recurInfo.currentStartYYYYMMDDInt,
+                                                      recurInfo.currentEndYYYYMMDDInt);
+            }
+            else
+            {
+                //The start of this occurrence is after the end of the calendar
+                //we don't need to look at this ooccurrence or any future ones
+                LogSerial_Verbose4("Stopping generating occurrences as current start is already %d"
+                                  , recurInfo.currentEndYYYYMMDDInt);
+                break;
+            }
         }
     }
     else

@@ -1129,11 +1129,12 @@ char *parsePartialDataForEvents(char *rawData, void *context)
                 entries[entriesNum].location[0] = '\0';
             }
 
-            //TODO: Pass description in (need to change signature to pass in length)
             uint32_t matchresult = INKYR_RESULT_NOOP;
             if (pCal->EventRules)
             {
-                matchresult = runEventMatchRules(pCal->EventRules, &entries[entriesNum],  "", eventDetails.recurRule);
+                matchresult = runEventMatchRules(pCal->EventRules, &entries[entriesNum],  
+                                                 eventDetails.foldedDescription, eventDetails.foldedDescriptionLen,
+                                                 eventDetails.recurRule);
             }
 
             if (matchresult != INKYR_RESULT_DISCARD)

@@ -1,5 +1,3 @@
-* Add eventdesc (multi-line so hard to determine end to eventprocessing)
-
 * Currents reads network socket until no more data arrives for 10secs - but calendar is sent using
     Transfer-Encoding: chunked  (with one chunk - payload length sent in hex at start of body)
      "After the headers are sent an http response will send the length of the chunk in hex, the chunk of data itself then a 0CRLF ("\r\n").
@@ -15,12 +13,6 @@
 
 * (Optional?) removal of dups between calendars
 
-* should only match e.g. DTSTART at start of line.
-   CRLF whitespace is a continuation see "unfolding in rfc:
-   https://www.ietf.org/rfc/rfc5545.txt
-  (newlines are encloded by the two bytes: \n (literal slash, literal n))
-  Rewrite as line by line parser
-
 * Currently works with Inkplate Library 7.0.0 (easy to change version in "Library Manager" - investigate crashes with 8.0.0)
 
 * events like birthdays that don't "stop" - don't need more occurrences if already in future 
@@ -28,8 +20,6 @@
 * fix more events that didn't parse and do something with timezone info we now parse
 
 * add a logProblem counter for LogSerial_Unusual() (counter to be shown in normal operation?)
-
-* no length checking of summary/location when putting into structure
 
 * getTimeString very inefficient - see notes at top of function
 

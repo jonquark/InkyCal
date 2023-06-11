@@ -75,7 +75,7 @@ static bool scancaseFoldedString(const char *foldedhaystack, size_t haystacklen,
     size_t needlelen = strlen(needle);
     size_t remainingChars = haystacklen;
 
-    while (*haystackpos != '\0' && remainingChars >= needlelen)
+    while (remainingChars >= needlelen && *haystackpos != '\0')
     {
         if (*haystackpos == *needle)
         {
@@ -134,7 +134,7 @@ static bool stringsEqualsStrip(const char *haystack, const char *needle)
 {
     bool match = true;
 
-    LogSerial_Verbose2("stringsEqualsStrip - %s and %s", haystack, needle);
+    LogSerial_Verbose2("stringsEqualsStrip - comparing  %s and %s", haystack, needle);
 
     while(isspace(haystack[0]))
     {

@@ -1136,18 +1136,14 @@ char *parsePartialDataForEvents(char *rawData, void *context)
 
     uint64_t batchEvents = 0;
     uint64_t batchEventsRelevant = 0;
-
-    bool eventRelevant = false;
-    
     char *unparseddata = rawData; 
     
     int evtrc = 0;
     
-    eventParsingDetails_t eventDetails;
-    
     // Search raw data for events
     while (evtrc == 0)
-    { 
+    {
+        bool eventRelevant = false;
         eventParsingDetails_t eventDetails = {0};
 
         evtrc = findNextEventDetails(&unparseddata, &eventDetails);
@@ -1197,7 +1193,7 @@ char *parsePartialDataForEvents(char *rawData, void *context)
                                   eventDetails.timeStart, eventDetails.timeEnd, 
                                   &entries[entriesNum].day, &entries[entriesNum].timeStamp);
 
-                    LogSerial_Verbose1("Determined day to be: %" PRIu8, entries[entriesNum].day);
+                    LogSerial_Verbose1("Determined day to be: %" PRId8, entries[entriesNum].day);
             
                     if (entries[entriesNum].day >= 0)
                     {

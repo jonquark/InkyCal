@@ -138,9 +138,11 @@ void setup()
 
         // Drawing all data, functions for that are above
         drawInfo();
+        LogSerial_Info("About to start grid");
         drawGrid();
+        LogSerial_Info("About to start data");
         drawData();
-
+        LogSerial_Info("About to start displaying");
         // Actually display all data
         display.display();
     }
@@ -233,7 +235,7 @@ void drawInfo()
 
     esp_sleep_wakeup_cause_t wakeup_reason;
 
-    //This always seems to give reason 0 - no big deal - but something to investigate?
+    //This always seems to give reason 0 with inkplate library < 8
     wakeup_reason = esp_sleep_get_wakeup_cause();
 
     if (wakeup_reason == ESP_SLEEP_WAKEUP_EXT0)
@@ -300,13 +302,14 @@ bool drawEvent(entry_t *event, int day, int beginY, int maxHeigth, int *heigthNe
 
     // Setting text font
     display.setFont(&FreeSans12pt7b);
-
+return false;
     // Some temporary variables
     int n = 0;
     char line[128];
 
     // Insert line brakes into setTextColor
     int lastSpace = -100;
+    LogSerial_Info("setcursor: %d, %d", x1 + 5, beginY + 26);  
     display.setCursor(x1 + 5, beginY + 26);
     for (int i = 0; i < min((size_t)64, strlen(event->name)); ++i)
     {
@@ -320,20 +323,25 @@ bool drawEvent(entry_t *event, int day, int beginY, int maxHeigth, int *heigthNe
         uint16_t w, h;
 
         // Gets text bounds
+        LogSerial_Info("getting textbound for %s", line);  
         display.getTextBounds(line, 0, 0, &xt1, &yt1, &w, &h);
 
         // Char out of bounds, put in next line
         if (w > 420 / 3 - 30)
         {
+            LogSerial_Info("out of bounds: %d", w);  
             // if there was a space 5 chars before, break line there
             if (n - lastSpace < 5)
             {
                 i -= n - lastSpace - 1;
                 line[lastSpace] = 0;
+                LogSerial_Info("truncated line to %s", line);
             }
 
-            // Print text line
+            // Print text line 
+            LogSerial_Info("setcursor: %d, %d", x1 + 5, display.getCursorY());  
             display.setCursor(x1 + 5, display.getCursorY());
+            LogSerial_Info("displaying %s", line);              
             display.println(line);
 
             // Clears line (null termination on first charachter)
@@ -343,19 +351,24 @@ bool drawEvent(entry_t *event, int day, int beginY, int maxHeigth, int *heigthNe
     }
 
     // display last line
+    LogSerial_Info("setcursor (line 354): %d, %d", x1 + 5, display.getCursorY());  
     display.setCursor(x1 + 5, display.getCursorY());
+    LogSerial_Info("displaying %s", line);  
     display.println(line);
 
     // Set cursor on same y but change x
+    LogSerial_Info("setcursor (line 360): %d, %d", x1 + 3, display.getCursorY());  
     display.setCursor(x1 + 3, display.getCursorY());
     display.setFont(&FreeSans9pt7b);
 
+    LogSerial_Info("location (length %d) is %s", strlen(event->location), event->location);  
     // Print time
     // also, if theres a location print it
-    if (strlen(event->location) != 1)
+/*    if (strlen(event->location) > 0)
     {
+        LogSerial_Info("We have decided there is a location so printing time %s", event->time);  
         display.println(event->time);
-
+        LogSerial_Info("setcursor (line 371): %d, %d", x1 + 5, display.getCursorY());  
         display.setCursor(x1 + 5, display.getCursorY());
 
         char line[128] = {0};
@@ -376,15 +389,17 @@ bool drawEvent(entry_t *event, int day, int beginY, int maxHeigth, int *heigthNe
                 for (int j = i - 1; j > max(-1, i - 4); --j)
                     line[j] = '.';
                 line[i] = 0;
+                LogSerial_Info("location truncated to %s", line);  
             }
         }
-
+        LogSerial_Info("displaying location as %s", line);  
         display.print(line);
     }
     else
     {
+        LogSerial_Info("No location, printing time %s", event->time);  
         display.print(event->time);
-    }
+    }*/
 
     // Calculating coordinates of text box
     int bx1 = x1 + 2;
@@ -420,8 +435,8 @@ bool drawEvent(entry_t *event, int day, int beginY, int maxHeigth, int *heigthNe
         if (currentColor > INKY_EVENT_COLOUR_ORANGE)
             currentColor = INKY_EVENT_COLOUR_GREEN;
     }
-
-    display.fillRect(bx1, by1, 440 / 3 - 7, by2 - by1, boxColour);
+    LogSerial_Info("Filling rect: %d,%d,%d,%d colour %d", bx1, by1, 440 / 3 - 7, by2 - by1, boxColour);
+    //display.fillRect(bx1, by1, 440 / 3 - 7, by2 - by1, boxColour);
     display.setTextColor(fgColour);
 
     // Upper left coordintes
@@ -480,7 +495,7 @@ bool drawEvent(entry_t *event, int day, int beginY, int maxHeigth, int *heigthNe
 
     // Print time
     // also, if theres a location print it
-    if (strlen(event->location) != 1)
+/*    if (strlen(event->location) > 0)
     {
         display.println(event->time);
 
@@ -512,25 +527,54 @@ bool drawEvent(entry_t *event, int day, int beginY, int maxHeigth, int *heigthNe
     else
     {
         display.print(event->time);
-    }
+    }*/
 
-
+    
     // Draw event rect bounds
+    /*LogSerial_Info("drawing thick lines");
+    LogSerial_Info("pausing first");    
+    delay(300); 
+    LogSerial_Info("line 1 %d,%d,%d,%d", bx1, by1, bx1, by2); 
     display.drawThickLine(bx1, by1, bx1, by2, 0, 2.0);
+    LogSerial_Info("line 2 %d,%d,%d,%d", bx1, by2, bx2, by2);
     display.drawThickLine(bx1, by2, bx2, by2, 0, 2.0);
+    LogSerial_Info("line 3 %d,%d,%d,%d", bx2, by2, bx2, by1); 
     display.drawThickLine(bx2, by2, bx2, by1, 0, 2.0);
+    LogSerial_Info("line 4 %d,%d,%d,%d", bx2, by1, bx1, by1); 
     display.drawThickLine(bx2, by1, bx1, by1, 0, 2.0);
+    LogSerial_Info("line 4 done");
+ 
+    LogSerial_Info("pausing afterwards");
+    delay(300); 
+    LogSerial_Info("done");
+    delay(1000);
 
     // Set how high is the event
-    *heigthNeeded = display.getCursorY() + 12 - y1;
+    int hneeded = display.getCursorY() + 12 - y1;
+    LogSerial_Info("height needed was %d", hneeded);
+    delay(1000);
+    LogSerial_Info("done getting height");
+    LogSerial_Info("pter is %p", heigthNeeded);
+    delay(1000);
+    LogSerial_Info("done displaying ptr... not altering it");*/
+    // *heigthNeeded = hneeded;
 
     // Return is it overflowing
+    if (display.getCursorY() < maxHeigth - 5)
+    {
+        LogSerial_Info("returning true");        
+    }
+    else
+    {
+        LogSerial_Info("returning false");        
+    }
     return display.getCursorY() < maxHeigth - 5;
 }
 
 // Main data drawing data
 void drawData()
 {
+  return;
     // Events displayed and overflown counters
     int columns[3] = {0};
     bool clogged[3] = {0};
@@ -539,6 +583,8 @@ void drawData()
     // Displaying events one by one
     for (int i = 0; i < entriesNum; ++i)
     {
+        int shift = 0;
+        LogSerial_Info("About to start entry %d (day %d shift %d)\n", i, entries[i].day, shift);
         // If column overflowed just add event to not shown
         if (entries[i].day != -1 && clogged[entries[i].day])
             ++cloggedCount[entries[i].day];
@@ -546,17 +592,19 @@ void drawData()
             continue;
 
         // We store how much height did one event take up
-        int shift = 0;
         bool s = drawEvent(&entries[i], entries[i].day, columns[entries[i].day] + 64, 600 - 4, &shift);
 
+        shift = 151;
         columns[entries[i].day] += shift;
 
         // If it overflowed, set column to clogged and add one event as not shown
         if (!s)
         {
+            LogSerial_Info("Event overflowed");
             ++cloggedCount[entries[i].day];
             clogged[entries[i].day] = 1;
         }
+        LogSerial_Info("Done event");
     }
 
     // Display not shown events info

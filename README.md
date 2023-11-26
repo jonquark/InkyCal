@@ -16,3 +16,9 @@ but has been largely rewritten (aside from the display code). It has:
 More details are in the [ChangeLog](ChangeLog.md)
 
 Details of some unit tests can be found in the [test subdirectory](test)
+
+
+## Dev Tips
+
+* Can draw a calendar for a particular date by uncommenting example code in setup() in InkyCal.ino to
+  (for example) debug weird behaviour on a particular date.

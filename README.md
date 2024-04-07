@@ -23,9 +23,14 @@ throws errors around overflowing dram (nb: boards are different to libraries)
 
 ## Debugging 
 
-When replicating on a computer what data we receive can do:
+* Can draw a calendar for a particular date by uncommenting example code in setup() in InkyCal.ino to
+  (for example) debug weird behaviour on a particular date.
+
+* When replicating on a computer what data we receive can do:
+```
 echo 'GET /calendar/ical/en.uk%23holiday%40group.v.calendar.google.com/public/basic.ics HTTP/1.1
 Host: calendar.google.com
 
 ' | openssl s_client -quiet -connect calendar.google.com:443 2>/dev/null >/tmp/openssl.caldata
 
+```

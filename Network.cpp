@@ -46,6 +46,49 @@ void Network::begin(const char *timeZoneString)
     setTime(timeZoneString);
 }
 
+static void dumpDataBufSerial(int logLevel, char *databuf, uint64_t buffOffsetFromStart)
+{
+    uint32_t charsPerLine = 100;
+    char line[2*charsPerLine+1]; //space to print \r as \+r etc. Extra char for null
+    uint32_t linepos = 0;
+    uint32_t linechars = 0;
+    uint64_t databufpos = 0;
+    uint64_t lineStartOffset = buffOffsetFromStart;
+    bool keepgoing = true;
+    bool lineend = false;
+
+    while (keepgoing) {
+        linepos = 0;
+        lineend = false;
+        linechars = 0;
+
+        while ((linepos < charsPerLine) && keepgoing  && !lineend) {
+            if (databuf[databufpos] != '\0') {
+                if (databuf[databufpos] == '\r') {
+                    line[linepos++] = '\\';
+                    line[linepos++] = 'r';
+                    linechars++;
+                    databufpos++;
+                } else if (databuf[databufpos] == '\n') {
+                    line[linepos++] = '\\';
+                    line[linepos++] = 'n';
+                    lineend = true;
+                    linechars++;
+                    databufpos++;
+                } else {
+                    line[linepos++] = databuf[databufpos++];
+                    linechars++;
+                }
+            } else {
+                keepgoing = false;
+            }
+        }
+        line[linepos++] = '\0';
+        LogSerial_LogImpl(logLevel, " %" PRIu64 " %s", lineStartOffset, line);
+        lineStartOffset += linechars;
+    }
+}
+
 // Function to get all data from web
 //
 // Currently restarts device on network errors e.g. no WIFI(!)
@@ -100,17 +143,46 @@ int Network::getData(const char *url, size_t maxbufsize,  dataParsingFn_t parser
 
     delay(300);
 
+    const char *headerKeys[] = {"Transfer-Encoding"};
+    const size_t headerKeysCount = sizeof(headerKeys) / sizeof(headerKeys[0]);
+    http.collectHeaders(headerKeys, headerKeysCount);
+
     // Actually do request
     int httpCode = http.GET();
 
     if (httpCode == 200)
     {
+        const char *transferEncoding = http.header("Transfer-Encoding").c_str();
+        bool chunked = false;
+
+        if(transferEncoding != NULL && strcasecmp(transferEncoding, "chunked") == 0)
+        {
+            LogSerial_Info("Found the Transfer-Encoding: chunked header");
+            chunked = true;
+        }
+        else
+        {
+            if (transferEncoding != NULL)
+            {
+                LogSerial_Info("Found unexpected transfer encoding header: '%s'", transferEncoding);
+                LogSerial_Warning("Assuming chunked");
+                chunked = true;
+            }
+            else
+            {
+              LogSerial_Info("Did not find the transfer encoding header");
+            }
+        }
         uint64_t n = 0;
         //ps_malloc allocs special "psram" - separate external memory
         char *databuf = (char *)ps_malloc(maxbufsize);
-        uint64_t totalReceived = 0;
-        uint64_t totalParsed   = 0;
-
+        uint64_t totalReceived            = 0;
+        uint64_t totalParsed              = 0;
+        bool     inChunk                  = false;
+        bool     skipChunkEndControlChars = false;
+        char     *chunkHdrStart           = databuf;
+        uint64_t bytesRemainingInChunk    = 0;
+        uint64_t buffOffsetFromStart      = 0;
 
         LogSerial_Info("http size (according to Content-Length)  is: %d", http.getSize());
 
@@ -126,12 +198,78 @@ int Network::getData(const char *url, size_t maxbufsize,  dataParsingFn_t parser
 
             while (    http.getStream().available()
                     && (rc == NETWORK_RC_OK) 
-                    && (charsInBatch < 500) )
+                    && (charsInBatch < 500))
             {
                 if (n < maxbufsize -1 )
                 {
-                    databuf[n++] = http.getStream().read();
+                    char nextChar = http.getStream().read();
+                    
+                    databuf[n++] = nextChar;
                     charsInBatch++;
+                    
+                    if (chunked)
+                    {
+                        if (!inChunk) 
+                        {
+                            if (skipChunkEndControlChars)
+                            {
+                                if (nextChar != '\r' && nextChar != '\n')
+                                {
+                                    skipChunkEndControlChars = false;
+                                    chunkHdrStart = &(databuf[n-1]); // -1 as we moved n when we put nextChar in
+                                
+                                    LogSerial_Info("Chunk Hdr start (post skipping control chars) is at: (n is %" PRIu64 " and buffOffsetFromStart is %" PRIu64, 
+                                                     n, buffOffsetFromStart);
+                                }
+                            }
+                            else if (nextChar == '\n') {
+                                //We've got the complete chunk size in hex - parse it
+                                char *endpos = NULL;
+                                uint64_t chunkLength = strtoull(chunkHdrStart, &endpos, 16);
+
+                                if (endpos != NULL && endpos != chunkHdrStart)
+                                {
+                                    //We read a valid hex length
+                                    LogSerial_Info("We've found a chunk of length % " PRIu64 " (n is %" PRIu64 " and buffOffsetFromStart is %" PRIu64, 
+                                               chunkLength, n, buffOffsetFromStart);
+
+                                    if (chunkLength > 0)
+                                    {
+                                        inChunk = true;
+                                        bytesRemainingInChunk = chunkLength;
+                                        chunkHdrStart = NULL;
+                                    }
+                                    else
+                                    {
+                                        chunkHdrStart = NULL;
+                                        rc = NETWORK_RC_DATACOMPLETE;
+                                    }
+                                }
+                            }
+                        }
+                        else //in chunk
+                        {
+                            if (bytesRemainingInChunk > 0)
+                            {
+                                bytesRemainingInChunk--;
+                            }
+                            if (bytesRemainingInChunk == 0)
+                            {
+                                inChunk = false;
+
+                                chunkHdrStart = &(databuf[n]);
+
+                                skipChunkEndControlChars = true;
+                                
+                                LogSerial_Info("Got to end of Chunk! Chunk Hdr start (pre skipping control chars) is at: (n is %" PRIu64 " and buffOffsetFromStart is %" PRIu64, 
+                                                     n, buffOffsetFromStart);
+                                
+                                LogSerial_Verbose4("Dumping buffer at chunk end");
+                                databuf[n] = '\0';
+                                dumpDataBufSerial(LOGSERIAL_LEVEL_VERBOSE4, databuf, buffOffsetFromStart);
+                            }
+                        }
+                    }
                 }
                 else
                 {
@@ -149,14 +287,26 @@ int Network::getData(const char *url, size_t maxbufsize,  dataParsingFn_t parser
 
             if (now - lastprogressreport > 2 * 1000)
             {
-                LogSerial_Info("So far, received bytes of data: %" PRIu64, totalReceived);
+                if (chunked)
+                {
+                    LogSerial_Info("So far, received bytes of data: %" PRIu64 " (inchunk: %s, chunkBytesRemaining: %" PRIu64 ")",
+                                    totalReceived, (inChunk? "True": "False"), bytesRemainingInChunk);
+                }
+                else
+                {
+                    LogSerial_Info("So far, received bytes of data: %" PRIu64, totalReceived);
+                }
                 lastprogressreport = now;
             }
 
-            if (  rc == NETWORK_RC_BUFFULL
+            if (  rc == NETWORK_RC_BUFFULL || rc == NETWORK_RC_DATACOMPLETE
                 ||( n > INKY_NETWORK_MINIMUM_CHUNK_SIZE && rc == NETWORK_RC_OK))
             {   
                 databuf[n] = 0;
+
+                LogSerial_Verbose3("Dumping buffer before parsing");
+                dumpDataBufSerial(LOGSERIAL_LEVEL_VERBOSE3, databuf, buffOffsetFromStart);
+
                 char *unparseddata = parser(databuf, parsingContext);
 
                 if (unparseddata == NULL)
@@ -170,22 +320,43 @@ int Network::getData(const char *url, size_t maxbufsize,  dataParsingFn_t parser
                     uint64_t justparsed = (unparseddata - databuf);
                     totalParsed += justparsed;
                     n -= justparsed;
+                    LogSerial_Verbose1("Moving %" PRIu64 " bytes of unparsed data", n);
                     memmove(databuf, unparseddata, n);
-                    rc = NETWORK_RC_OK;
+                    buffOffsetFromStart += justparsed;
+
+                    if (chunked)
+                    {
+                        if (chunkHdrStart != NULL)
+                        {
+                            //We are are moving the buffer when we have a pointer to the start of a chunk which is now been shifted
+                            //This shouldn't happen
+                            LogSerial_Error("Moving buffer when have pointer to chunk Start in the buffer - bug!");
+                            chunkHdrStart = NULL;
+                        }
+                    }
+
+                    if (rc != NETWORK_RC_DATACOMPLETE)
+                    {
+                        rc = NETWORK_RC_OK;
+                    }
                 }
             }
         }
         LogSerial_Info("In total, received bytes of data: %" PRIu64, totalReceived);
         databuf[n++] = 0;
-        LogSerial_Verbose3("Received data:\n%s", databuf);
+        LogSerial_Verbose3("Remaining data before last parse:\n%s", databuf);
 
         if ( n > 100)
         {
             LogSerial_Verbose3("Last 100 bytes of data:\n%s", databuf + (n-100));
         }
 
+        LogSerial_Info("Complete buffer at end\n%s", databuf);
+
         if (n > 1 && rc == NETWORK_RC_OK)
         {
+            LogSerial_Verbose3("Dumping buffer before final parse");
+            dumpDataBufSerial(LOGSERIAL_LEVEL_VERBOSE3, databuf, buffOffsetFromStart);
             //Parse last data
             char *unparseddata = parser(databuf, parsingContext);
 
@@ -201,6 +372,7 @@ int Network::getData(const char *url, size_t maxbufsize,  dataParsingFn_t parser
                 totalParsed += justparsed;
                 n -= justparsed;
                 memmove(databuf, unparseddata, n);
+                buffOffsetFromStart += justparsed;
                 LogSerial_Verbose1("Left over %" PRIu64 " bytes of data after final parse: %s", n, databuf); 
             }
         }
@@ -216,6 +388,11 @@ int Network::getData(const char *url, size_t maxbufsize,  dataParsingFn_t parser
 
     // end http
     http.end();
+
+    if (rc == NETWORK_RC_DATACOMPLETE)
+    {
+        rc = NETWORK_RC_OK;
+    }
 
     return rc;
 }

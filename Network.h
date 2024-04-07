@@ -18,13 +18,14 @@ extern char pass[];
 #ifndef NETWORK_H
 #define NETWORK_H
 
-#define NETWORK_RC_OK         0
-#define NETWORK_RC_BUFFULL   -1
-#define NETWORK_RC_PARSEFAIL -2 //function parsing the streamed data failed
+#define NETWORK_RC_OK           0
+#define NETWORK_RC_BUFFULL      -1
+#define NETWORK_RC_PARSEFAIL    -2 //function parsing the streamed data failed
+#define NETWORK_RC_DATACOMPLETE 1
 
 //As we download data we send it in chunks to the the following function:
 //First arg: data to parse
-//Second arg: oparsingContext
+//Second arg: Parsing Context
 //
 //returns: pointer to start of unparsed data or NULL for error
 typedef char *dataParsingFn_t(char *, void *);

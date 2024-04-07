@@ -38,8 +38,7 @@ void getDateStringOffsetDays(char* timeStr, int32_t offsetDays, bool inclYear);
 
 //context will get cast to a CalendarParsingContext_t *
 //returns pointer to first unparsed data (or NULL on error)
-char *parsePartialDataForEvents(char *rawData, void *context);
-
+char *parsePartialDataForEvents(char *rawData,  void *context);
 
 uint64_t getRelevantEventCount(); //count of events relevant to calendar display
 uint64_t getTotalEventCount();  //count of all events parsed

@@ -1,7 +1,7 @@
-* Currents reads network socket until no more data arrives for 10secs - but calendar is sent using
-    Transfer-Encoding: chunked  (with one chunk - payload length sent in hex at start of body)
+* Calendar Data is sent sent Transfer-Encoding: chunked
      "After the headers are sent an http response will send the length of the chunk in hex, the chunk of data itself then a 0CRLF ("\r\n").
       https://en.wikipedia.org/wiki/Chunked_transfer_encoding"
+  Improve the basic support that has been implemented, removing the hex digits at the start of chunks.
 
 * Rework word wrap (example that works badly: "Spring Bank Holiday" breaks after Spring and before y)
 
@@ -13,9 +13,8 @@
 
 * (Optional?) removal of dups between calendars
 
-* Currently works with Inkplate Library 7.0.0 (easy to change version in "Library Manager" - investigate crashes with 8.0.0)
-
 * fix more events that didn't parse and do something with timezone info we now parse from event DTSTART (maybe use timezone info in file)
+       (Have both Mum and Dad events on 2024-04-07)
 
 * unit test event processing esp in folded desc
 

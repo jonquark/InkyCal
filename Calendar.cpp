@@ -1128,8 +1128,8 @@ int32_t findNextEventDetails(char **ppUnparsedData, eventParsingDetails_t *pEven
     return rc;
 }
 
-char *parsePartialDataForEvents(char *rawData, void *context)
-{
+char *parsePartialDataForEvents(char *rawData,  void *context)
+{    
     CalendarParsingContext_t *calContext = (CalendarParsingContext_t *)context;  
     Calendar_t *pCal = calContext->pCal;
 

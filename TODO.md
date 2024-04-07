@@ -21,3 +21,11 @@
 * Document where event processing searches e.g. not in long summaries, locations
 
 * maybe: add a logProblem counter for LogSerial_Unusual() (counter to be shown in normal operation?)
+
+
+* Duplicate mum events on Aug-31-2023:
+     Store uids and sequence with events
+
+     If event has recurrence-id then:
+         from the recurrence-id - see if the old event would have been relevant,
+            if so, compare sequence and if new sequence >= then  go through and remove relevant event day(s)
